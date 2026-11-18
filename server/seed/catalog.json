@@ -87,7 +87,8 @@
         "Warranty": "12 months"
       },
       "image": "/assets/img/products/stockpot-set.jpg",
-      "sort": 0
+      "sort": 0,
+      "cost": 264.52
     },
     {
       "id": "nonstick-pan",
@@ -110,7 +111,8 @@
         "Hob": "Gas, electric, induction"
       },
       "image": "/assets/img/products/nonstick-pan.jpg",
-      "sort": 1
+      "sort": 1,
+      "cost": 62.9
     },
     {
       "id": "glass-tumblers",
@@ -133,7 +135,8 @@
         "Dishwasher": "Yes"
       },
       "image": "/assets/img/products/glass-tumblers.jpg",
-      "sort": 2
+      "sort": 2,
+      "cost": 36.72
     },
     {
       "id": "dinner-set",
@@ -156,7 +159,8 @@
         "Microwave": "Yes"
       },
       "image": "/assets/img/products/dinner-set.jpg",
-      "sort": 3
+      "sort": 3,
+      "cost": 189.72
     },
     {
       "id": "spin-mop",
@@ -179,7 +183,8 @@
         "Colour": "Pink / grey"
       },
       "image": "/assets/img/products/spin-mop.jpg",
-      "sort": 4
+      "sort": 4,
+      "cost": 108.12
     },
     {
       "id": "trigger-spray",
@@ -202,7 +207,8 @@
         "Colour": "Clear / pink"
       },
       "image": "/assets/img/products/trigger-spray.jpg",
-      "sort": 5
+      "sort": 5,
+      "cost": 7.62
     },
     {
       "id": "scourer-sponges",
@@ -225,7 +231,8 @@
         "Colour": "Assorted"
       },
       "image": "/assets/img/products/scourer-sponges.jpg",
-      "sort": 6
+      "sort": 6,
+      "cost": 11.22
     },
     {
       "id": "broom-set",
@@ -248,7 +255,8 @@
         "Colour": "Burgundy"
       },
       "image": "/assets/img/products/broom-set.jpg",
-      "sort": 7
+      "sort": 7,
+      "cost": 32.64
     },
     {
       "id": "pedal-bin",
@@ -271,7 +279,8 @@
         "Colour": "Blush"
       },
       "image": "/assets/img/products/pedal-bin.jpg",
-      "sort": 8
+      "sort": 8,
+      "cost": 87.72
     },
     {
       "id": "bath-towels",
@@ -294,7 +303,8 @@
         "Colours": "Blush, plum, white"
       },
       "image": "/assets/img/products/bath-towels.jpg",
-      "sort": 9
+      "sort": 9,
+      "cost": 46.92
     },
     {
       "id": "soap-dispenser",
@@ -317,7 +327,8 @@
         "Colour": "Lilac / blush"
       },
       "image": "/assets/img/products/soap-dispenser.jpg",
-      "sort": 10
+      "sort": 10,
+      "cost": 16.93
     },
     {
       "id": "toilet-rolls",
@@ -340,7 +351,8 @@
         "Fibre": "Virgin pulp"
       },
       "image": "/assets/img/products/toilet-rolls.jpg",
-      "sort": 11
+      "sort": 11,
+      "cost": 128.52
     },
     {
       "id": "storage-box",
@@ -363,7 +375,8 @@
         "Stackable": "Yes"
       },
       "image": "/assets/img/products/storage-box.jpg",
-      "sort": 12
+      "sort": 12,
+      "cost": 42.16
     },
     {
       "id": "food-containers",
@@ -386,7 +399,8 @@
         "Microwave": "Yes"
       },
       "image": "/assets/img/products/food-containers.jpg",
-      "sort": 13
+      "sort": 13,
+      "cost": 25.84
     },
     {
       "id": "woven-basket",
@@ -409,7 +423,8 @@
         "Largest": "40 cm"
       },
       "image": "/assets/img/products/woven-basket.jpg",
-      "sort": 14
+      "sort": 14,
+      "cost": 98.6
     },
     {
       "id": "laundry-basket",
@@ -432,7 +447,8 @@
         "Colour": "Dusty pink"
       },
       "image": "/assets/img/products/laundry-basket.jpg",
-      "sort": 15
+      "sort": 15,
+      "cost": 66.64
     },
     {
       "id": "velvet-hangers",
@@ -455,7 +471,8 @@
         "Colour": "Burgundy / lilac"
       },
       "image": "/assets/img/products/velvet-hangers.jpg",
-      "sort": 16
+      "sort": 16,
+      "cost": 39.44
     },
     {
       "id": "soy-candle",
@@ -478,7 +495,8 @@
         "Scents": "4 options"
       },
       "image": "/assets/img/products/soy-candle.jpg",
-      "sort": 17
+      "sort": 17,
+      "cost": 28.56
     },
     {
       "id": "table-lamp",
@@ -501,7 +519,8 @@
         "Fitting": "E27"
       },
       "image": "/assets/img/products/table-lamp.jpg",
-      "sort": 18
+      "sort": 18,
+      "cost": 128.52
     },
     {
       "id": "electric-kettle",
@@ -524,7 +543,8 @@
         "Warranty": "12 months"
       },
       "image": "/assets/img/products/electric-kettle.jpg",
-      "sort": 19
+      "sort": 19,
+      "cost": 101.32
     },
     {
       "id": "blender",
@@ -547,7 +567,8 @@
         "Warranty": "12 months"
       },
       "image": "/assets/img/products/blender.jpg",
-      "sort": 20
+      "sort": 20,
+      "cost": 162.52
     },
     {
       "id": "paper-cups",
@@ -570,7 +591,8 @@
         "Print": "Plain kraft"
       },
       "image": "/assets/img/products/paper-cups.jpg",
-      "sort": 21
+      "sort": 21,
+      "cost": 0.65
     },
     {
       "id": "paper-plates",
@@ -593,7 +615,8 @@
         "Compostable": "Yes"
       },
       "image": "/assets/img/products/paper-plates.jpg",
-      "sort": 22
+      "sort": 22,
+      "cost": 19.04
     },
     {
       "id": "paper-towel",
@@ -616,7 +639,8 @@
         "Fibre": "Virgin pulp"
       },
       "image": "/assets/img/products/paper-towel.jpg",
-      "sort": 23
+      "sort": 23,
+      "cost": 145.52
     }
   ]
 }

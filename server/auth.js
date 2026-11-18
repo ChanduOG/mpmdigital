@@ -3,8 +3,10 @@
 const crypto = require("node:crypto");
 const { db } = require("./db");
 
-const SESSION_DAYS = 30;
-const COOKIE = "mpm_sid";
+// The shop and the admin are separate apps with separate logins (and cookies).
+const IS_ADMIN_APP = process.env.APP_ROLE === "admin";
+const SESSION_DAYS = IS_ADMIN_APP ? 7 : 30;
+const COOKIE = IS_ADMIN_APP ? "mpm_admin_sid" : "mpm_sid";
 
 function hashPassword(pw) {
   const salt = crypto.randomBytes(16);

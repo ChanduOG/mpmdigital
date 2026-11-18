@@ -3,10 +3,13 @@
   "version": "1.0.0",
   "private": true,
   "description": "MPM Digital: household products store for home shoppers and wholesale buyers",
-  "main": "server/server.js",
+  "main": "server/app.js",
   "scripts": {
-    "start": "node --env-file-if-exists=.env server/server.js",
-    "dev": "node --watch --env-file-if-exists=.env server/server.js"
+    "start": "node --env-file-if-exists=.env server/server.js store",
+    "admin": "node --env-file-if-exists=.env server/server.js admin",
+    "dev:store": "node --watch --env-file-if-exists=.env server/server.js store",
+    "dev:admin": "node --watch --env-file-if-exists=.env server/server.js admin",
+    "build": "node scripts/build.js"
   },
   "engines": {
     "node": ">=22"

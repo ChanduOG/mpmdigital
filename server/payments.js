@@ -1,16 +1,17 @@
 // Payment methods. This is the single place to plug in payment connectors later.
 //
 // Each method has:
-//   enabled()                 -> should checkout offer it?
-//   start(order, ctx)         -> what the shopper sees after placing the order:
-//                                { type: "instructions", ... }  e.g. EFT banking details
-//                                { type: "redirect", url }       e.g. PayFast / Yoco / Peach hosted page
-//                                { type: "none" }
-//   (optional) notify(req, body) -> webhook/ITN handler that marks orders paid
+//   enabled(settings)               -> should checkout offer it?
+//   start(order, { user, settings }) -> what the shopper sees after placing the order:
+//                                      { type: "instructions", ... }  e.g. EFT banking details
+//                                      { type: "redirect", url }       e.g. PayFast / Yoco / Peach hosted page
+//                                      { type: "none" }
+//   (optional) notify(req, body)    -> webhook/ITN handler that marks orders paid (call markPaid)
 //
+// EFT details and the EFT / 30-day account switches are edited in Admin → Settings.
 // To add a gateway (e.g. PayFast): implement `start` to build the signed redirect URL,
 // implement `notify` to verify the callback and call markPaid(ref, gatewayRef),
-// then enable it via env (PAYFAST_MERCHANT_ID etc.).
+// then enable it via env (CARD_GATEWAY etc.).
 "use strict";
 const { db } = require("./db");
 
@@ -20,26 +21,26 @@ const methods = {
   eft: {
     label: "EFT / bank transfer",
     note: "We'll show our banking details after you place your order. Your order ships once payment clears.",
-    enabled: () => true,
-    start: (order) => ({
+    enabled: (st) => st.payments.eft !== false,
+    start: (order, { settings: st }) => ({
       type: "instructions",
       title: "Pay by EFT",
       lines: [
-        ["Bank", env("BANK_NAME", "Your bank name")],
-        ["Account name", env("BANK_ACCOUNT_NAME", "MPM Digital")],
-        ["Account number", env("BANK_ACCOUNT_NUMBER", "0000000000")],
-        ["Branch code", env("BANK_BRANCH_CODE", "000000")],
+        ["Bank", st.bank.name || "(bank details to follow by email)"],
+        ["Account name", st.bank.accountName || st.store.name],
+        ["Account number", st.bank.accountNumber || "-"],
+        ["Branch code", st.bank.branchCode || "-"],
         ["Reference", order.ref],
         ["Amount", `R${order.total.toFixed(2)}`],
       ],
-      footer: "Please use your order reference as the payment reference and email proof of payment to " + env("STORE_EMAIL", "orders@example.com") + ".",
+      footer: "Please use your order reference as the payment reference" + (st.store.email ? " and email proof of payment to " + st.store.email + "." : "."),
     }),
   },
 
   account: {
     label: "30-day trade account",
     note: "For approved trade accounts only.",
-    enabled: () => true,
+    enabled: (st) => st.payments.account !== false,
     allowed: (user) => !!user && user.trade_status === "approved",
     start: () => ({ type: "none", message: "This order has been placed on your 30-day account." }),
   },
@@ -59,9 +60,9 @@ const methods = {
   },
 };
 
-function available(user) {
+function available(user, settings) {
   return Object.entries(methods)
-    .filter(([, m]) => m.enabled() && (!m.allowed || m.allowed(user)))
+    .filter(([, m]) => m.enabled(settings) && (!m.allowed || m.allowed(user)))
     .map(([id, m]) => ({ id, label: m.label, note: m.note }));
 }
 

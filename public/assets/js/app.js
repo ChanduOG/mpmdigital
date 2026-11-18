@@ -9,7 +9,7 @@
 
   const PR = window.MPMPricing;          // shared with the server (assets/js/pricing.js)
   const ICONS = window.MPM_ICONS || {};
-  const { VAT_RATE, TIERS } = PR;
+  const { VAT_RATE } = PR;
   let CATEGORIES = [], PRODUCTS = [], SETTINGS = { paymentMethods: [] };
   let user = null;                        // signed-in customer (or null)
 
@@ -25,9 +25,27 @@
     if (!res.ok) { const e = new Error(data.error || `Request failed (${res.status})`); e.status = res.status; throw e; }
     return data;
   }
+  // Anonymous, cookie-free analytics for the admin dashboard (see server/analytics.js).
+  let firstView = true;
+  function track(type, extra = {}) {
+    try {
+      fetch("/api/track", {
+        method: "POST", keepalive: true, credentials: "same-origin",
+        headers: { "Content-Type": "application/json", "X-Requested-With": "mpm" },
+        body: JSON.stringify({ type, mode: mode || "home", ...extra }),
+      }).catch(() => {});
+    } catch { /* ignore */ }
+  }
+
   async function loadCatalog() {
     const c = await api("/api/catalog");
     CATEGORIES = c.categories; PRODUCTS = c.products; SETTINGS = c.settings;
+    PR.configure({ ...SETTINGS, tiers: c.tiers });
+    const ann = document.querySelector(".announce-track");
+    if (ann && Array.isArray(SETTINGS.announcement) && SETTINGS.announcement.length) {
+      const items = SETTINGS.announcement.map((t) => `<span>${esc(t)}</span><i></i>`).join("");
+      ann.innerHTML = items + items;
+    }
     const chips = document.querySelector(".pay-chips");
     if (chips) chips.innerHTML = SETTINGS.paymentMethods.map((m) => `<span>${esc(m.label.replace(" / bank transfer", ""))}</span>`).join("");
   }
@@ -90,6 +108,11 @@
     filter: '<svg viewBox="0 0 24 24"><path d="M4 6h16M7 12h10M10 18h4"/></svg>',
     search: '<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>',
     heart: '<svg viewBox="0 0 24 24"><path d="M12 20s-7-4.4-9-9a4.8 4.8 0 0 1 9-3 4.8 4.8 0 0 1 9 3c-2 4.6-9 9-9 9z"/></svg>',
+    back: '<svg viewBox="0 0 24 24"><path d="M19 12H5M11 18l-6-6 6-6"/></svg>',
+    lock: '<svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>',
+    bank: '<svg viewBox="0 0 24 24"><path d="M3 10 12 4l9 6M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 20h18"/></svg>',
+    card: '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M3 10h18M7 15h4"/></svg>',
+    bolt: '<svg viewBox="0 0 24 24"><path d="M13 3 5 14h6l-1 7 8-11h-6z"/></svg>',
   };
 
   /* ---------- smooth scroll (Lenis, optional) ---------- */
@@ -99,7 +122,12 @@
     const raf = (t) => { lenis.raf(t); requestAnimationFrame(raf); };
     requestAnimationFrame(raf);
   }
-  const scrollToTop = () => (lenis ? lenis.scrollTo(0, { immediate: true }) : window.scrollTo(0, 0));
+  // Jump to the top on page change. Lenis caches the old page height, so resize it first,
+  // and also reset the native scroll (short pages otherwise keep the old offset).
+  const scrollToTop = () => {
+    window.scrollTo(0, 0);
+    if (lenis) { lenis.resize(); lenis.scrollTo(0, { immediate: true, force: true }); }
+  };
   const scrollToEl = (el) => (lenis ? lenis.scrollTo(el, { offset: -96, duration: 1.4 }) : el.scrollIntoView({ behavior: "smooth" }));
   const lockScroll = (on) => { document.body.style.overflow = on ? "hidden" : ""; if (lenis) on ? lenis.stop() : lenis.start(); };
 
@@ -134,7 +162,7 @@
 
   /* ---------- cart ---------- */
   const keyOf = (l) => `${l.id}:${l.kind}`;
-  const saveCart = () => { store.set("mpm_cart", cart); renderCart(); };
+  const saveCart = () => { store.set("mpm_cart", cart); renderCart(); window.dispatchEvent(new Event("mpm:cart")); };
   const itemCount = () => cart.reduce((a, l) => a + l.qty, 0);
   const lineEx = (l) => PR.lineEx(byId(l.id), l);
   const lineLabel = (l) => (l.kind === "case" ? plural(l.qty, "case") : plural(l.qty, "item"));
@@ -152,6 +180,7 @@
     saveCart();
     const c = $("#cartCount"); c.classList.remove("bump"); void c.offsetWidth; c.classList.add("bump");
     toast(p, `Added ${kind === "case" ? plural(qty, "case") : plural(qty, "item")} · ${p.name}`);
+    track("add_to_cart", { productId: p.id, path: location.hash.replace(/^#/, "").split("?")[0] || "/" });
   }
   function setQty(key, qty) {
     const line = cart.find((l) => keyOf(l) === key); if (!line) return;
@@ -224,8 +253,8 @@
         let meta, hint = "";
         if (l.kind === "case") {
           const tier = tierFor(l.qty), nt = nextTier(l.qty);
-          meta = `Case of ${p.pack} · ${money(shown(unitPrice(p, l.qty)))}/unit${tier.off ? ` · <span class="tier-pill">${tier.name} −${tier.off * 100}%</span>` : ""}`;
-          if (nt) hint = `Add ${plural(nt.min - l.qty, "more case")} to unlock ${nt.name} pricing (−${nt.off * 100}%)`;
+          meta = `Case of ${p.pack} · ${money(shown(unitPrice(p, l.qty)))}/unit${tier.off ? ` · <span class="tier-pill">${tier.name} −${Math.round(tier.off * 100)}%</span>` : ""}`;
+          if (nt) hint = `Add ${plural(nt.min - l.qty, "more case")} to unlock ${nt.name} pricing (−${Math.round(nt.off * 100)}%)`;
         } else {
           meta = `${money(shown(retailEx(p)))} each`;
           if (canTrade() && l.qty >= Math.ceil(p.pack / 2)) hint = `Buying ${l.qty}? A case of ${p.pack} is ${money(p.price * 1.15)}/unit: save ${caseSaving(p)}%`;
@@ -280,7 +309,7 @@
     const pending = user && SETTINGS.tradeStatus === "pending";
     return `<div class="lock-ico">${svg.shield}</div>
       <h3>${pending ? "Your application is being reviewed" : "Trade prices are for approved businesses"}</h3>
-      <p>${pending ? "We verify trade accounts within one business day. You'll see wholesale case prices here as soon as you're approved." : "Wholesale case prices, volume discounts of up to 22%, tax invoices and 30-day terms are available once your business is verified."}</p>
+      <p>${pending ? "We verify trade accounts within one business day. You'll see wholesale case prices here as soon as you're approved." : "Wholesale case prices, volume discounts of up to ${PR.maxOff()}%, tax invoices and 30-day terms are available once your business is verified."}</p>
       <ul class="lock-list"><li>${svg.check}Buy by the case at wholesale prices</li><li>${svg.check}Automatic volume tiers</li><li>${svg.check}Bulk order sheet and quotes</li></ul>
       ${pending ? "" : `<div class="lock-btns"><a href="#/business" class="btn btn-pink">Apply for a trade account ${svg.arrow}</a>${user ? "" : `<a href="#/account?next=business" class="btn btn-outline-light">I have an account: sign in</a>`}</div>`}`;
   };
@@ -374,7 +403,7 @@
           <h2 class="h2">${biz ? 'The more you stock, <span class="serif">the less you pay.</span>' : 'Wholesale prices for <span class="serif">trade accounts.</span>'}</h2>
           <p class="lead">${biz ? "Discounts apply per product line, so there are no codes to enter and no negotiation. Add cases and the price drops at every tier." : "Run a shop, salon, guesthouse or cleaning business? Approved trade accounts buy by the case at wholesale prices, with volume discounts at every tier. Apply in two minutes; we verify within one business day."}</p>
           <div class="tier-list" id="tierList">
-            ${TIERS.map((t) => `<div class="tier-row" data-tier="${t.min}"><span class="tier-dot">${t.name[0]}</span><div><strong>${t.name}</strong><small>${t.label}</small></div><span class="tier-off">${t.off ? `−${t.off * 100}%` : "List"}</span></div>`).join("")}
+            ${PR.TIERS.map((t) => `<div class="tier-row" data-tier="${t.min}"><span class="tier-dot">${t.name[0]}</span><div><strong>${t.name}</strong><small>${t.label}</small></div><span class="tier-off">${t.off ? `−${Math.round(t.off * 100)}%` : "List"}</span></div>`).join("")}
           </div>
           ${biz ? "" : `<a href="#/business" class="btn btn-primary" style="margin-top:22px">${user && SETTINGS.tradeStatus === "pending" ? "Application under review" : "Get trade pricing"} ${svg.arrow}</a>`}
         </div>
@@ -388,7 +417,7 @@
         <div class="stats">
           <div class="stat reveal"><strong data-count="500">0</strong><span>Household products across 8 categories</span></div>
           <div class="stat reveal" style="--d:.06s"><strong data-count="48" data-suffix="h">0</strong><span>Dispatch from order confirmation</span></div>
-          <div class="stat reveal" style="--d:.12s"><strong data-count="22" data-suffix="%">0</strong><span>Maximum volume discount for businesses</span></div>
+          <div class="stat reveal" style="--d:.12s"><strong data-count="${PR.maxOff()}" data-suffix="%">0</strong><span>Maximum volume discount for businesses</span></div>
           <div class="stat reveal" style="--d:.18s"><strong data-count="9">0</strong><span>Provinces delivered to, door to door</span></div>
         </div>
         <div class="features">
@@ -435,8 +464,8 @@
         <div class="reveal"><span class="eyebrow">FAQ</span><h2 class="h2">Questions, <span class="serif">answered.</span></h2><p class="lead" style="margin-top:16px">Can't find what you need? Our team replies within one business day.</p><a href="#/checkout?mode=quote" class="btn btn-primary" style="margin-top:24px">Get in touch ${svg.arrow}</a></div>
         <div class="faq reveal" style="--d:.08s">
           <details open><summary>Can I buy just one item?</summary><p>Yes. Choose "For my home" and you can buy single items at everyday prices, delivered to your door. Delivery is free on orders over R750.</p></details>
-          <details><summary>What's the difference between home and business pricing?</summary><p>Home prices are per item and include VAT. Business (trade) pricing sells by the case at wholesale rates, shows prices excluding VAT, and gives automatic volume discounts of up to 22%. It's available to approved trade accounts: apply under "For business" and we'll verify your business within one business day.</p></details>
-          <details><summary>How does volume pricing work?</summary><p>Each product has four tiers based on the number of cases of that line: Starter (1–9), Trade (10–24, −8%), Volume (25–49, −15%) and Distributor (50+, −22%). Discounts are applied automatically in your cart.</p></details>
+          <details><summary>What's the difference between home and business pricing?</summary><p>Home prices are per item and include VAT. Business (trade) pricing sells by the case at wholesale rates, shows prices excluding VAT, and gives automatic volume discounts of up to ${PR.maxOff()}%. It's available to approved trade accounts: apply under "For business" and we'll verify your business within one business day.</p></details>
+          <details><summary>How does volume pricing work?</summary><p>Discounts depend on how many cases of a product you order: ${PR.TIERS.map((t) => `${esc(t.name)} (${esc(t.label.replace(" cases", ""))}${t.off ? `, −${Math.round(t.off * 100)}%` : ""})`).join(", ")}. They're applied automatically in your cart.</p></details>
           <details><summary>How long does delivery take?</summary><p>We dispatch within 48 hours. Main centres usually receive orders in 2–4 business days, and regional areas in 3–6.</p></details>
           <details><summary>Can I return something?</summary><p>Unused items can be returned within 14 days. Damaged or faulty goods are replaced free of charge if reported within 7 days of delivery.</p></details>
         </div>
@@ -491,7 +520,7 @@
     const c = catOf(p);
     const related = PRODUCTS.filter((x) => x.cat === p.cat && x.id !== p.id).concat(PRODUCTS.filter((x) => x.cat !== p.cat)).slice(0, 4);
     const tierTable = `<table class="tier-table" id="tierTable"><thead><tr><th>Tier</th><th>Cases</th><th>Discount</th><th style="text-align:right">Unit price</th></tr></thead><tbody>
-      ${TIERS.map((t) => `<tr data-min="${t.min}"><td>${t.name}</td><td>${t.label.replace(" cases", "")}</td><td>${t.off ? `−${t.off * 100}%` : "n/a"}</td><td style="text-align:right">${money(isBiz() ? shown(p.price * (1 - t.off)) : p.price * (1 - t.off) * 1.15)}</td></tr>`).join("")}
+      ${PR.TIERS.map((t) => `<tr data-min="${t.min}"><td>${t.name}</td><td>${t.label.replace(" cases", "")}</td><td>${t.off ? `−${Math.round(t.off * 100)}%` : "n/a"}</td><td style="text-align:right">${money(isBiz() ? shown(p.price * (1 - t.off)) : p.price * (1 - t.off) * 1.15)}</td></tr>`).join("")}
       </tbody></table>`;
     const buyBox = isBiz() ? `
         <div class="pdp-box">
@@ -585,41 +614,75 @@
     const biz = isBiz();
     const quote = biz && params.get("mode") === "quote";
     const contactOnly = !biz && params.get("mode") === "quote";
+    const D = SETTINGS.delivery || {};
+    const provinces = ["Eastern Cape", "Free State", "Gauteng", "KwaZulu-Natal", "Limpopo", "Mpumalanga", "North West", "Northern Cape", "Western Cape"];
+    const payIcon = { eft: svg.bank, account: svg.wallet, card: svg.card, "instant-eft": svg.bolt };
+    const heading = quote ? 'Request a <span class="serif">quote</span>' : contactOnly ? 'Get in <span class="serif">touch</span>' : 'Check<span class="serif">out</span>';
     return `
-    <section class="page-head"><div class="orb orb-2"></div><div class="container">
-      <nav class="crumbs"><a href="#/">Home</a><span>${quote ? "Request a quote" : contactOnly ? "Contact us" : "Checkout"}</span></nav>
-      <h1>${quote ? 'Request a <span class="serif">quote</span>' : contactOnly ? 'Get in <span class="serif">touch</span>' : 'Secure <span class="serif">checkout</span>'}</h1>
-      <p>${quote ? "Send us your list and our trade team will reply within one business day with pricing, stock and delivery dates." : contactOnly ? "Ask us anything about products, orders or delivery. We reply within one business day." : biz ? "Confirm your business details and delivery address. Prices are locked for this order." : "Almost there. Tell us where to deliver."}</p>
-    </div></section>
-    <div class="container two-col">
-      <form id="checkoutForm" novalidate data-quote="${quote || contactOnly}">
+    <section class="co">
+      <div class="orb orb-1"></div><div class="orb orb-2"></div>
+      <div class="container">
+        <header class="co-top">
+          <a href="#/shop" class="co-back">${svg.back} Continue shopping</a>
+          ${quote || contactOnly ? "" : `<ol class="co-steps" aria-label="Checkout progress"><li class="ok"><i>${svg.check}</i>Cart</li><li class="on" id="stDetails"><i>2</i>Details</li><li id="stPay"><i>3</i>Payment</li><li><i>4</i>Done</li></ol>`}
+          <span class="co-secure">${svg.lock} Secure checkout</span>
+        </header>
+        <h1 class="co-title">${heading}</h1>
         ${SETTINGS.preview ? `<div class="mode-banner" style="margin:0 0 20px">${svg.clock}<span><b>Online ordering opens soon.</b> Checkout isn't switched on yet. Please check back shortly.</span></div>` : ""}
         ${biz ? `<div class="mode-switch" role="tablist"><button type="button" class="${quote ? "" : "on"}" data-cmode="order">Place order</button><button type="button" class="${quote ? "on" : ""}" data-cmode="quote">Request quote</button></div>` : ""}
-        <div class="form-card"><h3><span class="n">1</span>${biz ? "Business details" : "Your details"}</h3>${user ? `<p class="form-hint">Signed in as <b>${esc(user.email)}</b>.</p>` : ""}<div class="fields">
-          ${biz ? `<div class="field"><label for="f1">Business name</label><input class="input" id="f1" name="business" required autocomplete="organization"></div>
-          <div class="field"><label for="f2">VAT number (optional)</label><input class="input" id="f2" name="vat" inputmode="numeric"></div>` : ""}
-          <div class="field"><label for="f3">${biz ? "Contact person" : "Full name"}</label><input class="input" id="f3" name="name" required autocomplete="name"></div>
-          <div class="field"><label for="f4">Phone</label><input class="input" id="f4" name="phone" type="tel" required autocomplete="tel"></div>
-          <div class="field full"><label for="f5">Email</label><input class="input" id="f5" name="email" type="email" required autocomplete="email"></div>
-        </div></div>
-        <div class="form-card" ${contactOnly ? "hidden" : ""}><h3><span class="n">2</span>Delivery</h3><div class="fields">
-          <div class="field full"><label for="f6">Street address</label><input class="input" id="f6" name="street" ${contactOnly ? "" : "required"} autocomplete="street-address"></div>
-          <div class="field"><label for="f7">City / town</label><input class="input" id="f7" name="city" ${contactOnly ? "" : "required"} autocomplete="address-level2"></div>
-          <div class="field"><label for="f8">Province</label><select class="select" id="f8" name="province" style="width:100%" ${contactOnly ? "" : "required"}><option value="">Select…</option>${["Eastern Cape", "Free State", "Gauteng", "KwaZulu-Natal", "Limpopo", "Mpumalanga", "North West", "Northern Cape", "Western Cape"].map((x) => `<option>${x}</option>`).join("")}</select></div>
-          <div class="field"><label for="f9">Postal code</label><input class="input" id="f9" name="postal" inputmode="numeric" ${contactOnly ? "" : "required"} autocomplete="postal-code"></div>
-          <div class="field"><label for="f10">Delivery notes</label><input class="input" id="f10" name="notes" placeholder="${biz ? "Loading bay, hours…" : "Gate code, complex name…"}"></div>
-        </div></div>
-        <div class="form-card" id="payCard" ${quote || contactOnly ? "hidden" : ""}><h3><span class="n">3</span>Payment</h3><div class="radio-cards">
-          ${SETTINGS.paymentMethods.map((m, i) => `<label class="radio-card"><input type="radio" name="pay" value="${esc(m.id)}" ${i === 0 ? "checked" : ""}><div><strong>${esc(m.label)}</strong><small>${esc(m.note)}</small></div></label>`).join("")}
-        </div>${user ? "" : `<p class="form-hint">Have an account? <a href="#/account?next=checkout">Sign in</a> to track this order${biz ? " and pay on your trade account" : ""}.</p>`}</div>
-        <div class="form-card" id="quoteCard" ${quote || contactOnly ? "" : "hidden"}><h3><span class="n">${contactOnly ? 2 : 3}</span>${contactOnly ? "Your message" : "Anything else?"}</h3>
-          <div class="field"><label for="f11">${contactOnly ? "How can we help?" : "Tell us about your requirements"}</label><textarea class="textarea" id="f11" name="message" placeholder="${contactOnly ? "Product questions, an existing order…" : "Quantities, products not listed, delivery dates, private label…"}"></textarea></div>
+        <div class="co-grid">
+          <form id="checkoutForm" class="co-form" novalidate data-quote="${quote || contactOnly}">
+            <section class="co-sec">
+              <header><span class="n">1</span><div><h2>${biz ? "Business & contact" : "Contact"}</h2><small>${user ? `Signed in as <b>${esc(user.email)}</b>` : `Have an account? <a href="#/account?next=checkout">Sign in</a> for faster checkout.`}</small></div></header>
+              <div class="fields">
+                <div class="field full"><label for="f5">Email</label><input class="input" id="f5" name="email" type="email" required autocomplete="email" placeholder="you@example.co.za"></div>
+                <div class="field"><label for="f3">${biz ? "Contact person" : "Full name"}</label><input class="input" id="f3" name="name" required autocomplete="name"></div>
+                <div class="field"><label for="f4">Mobile number</label><input class="input" id="f4" name="phone" type="tel" required autocomplete="tel" placeholder="082 123 4567"></div>
+                ${biz ? `<div class="field"><label for="f1">Business name</label><input class="input" id="f1" name="business" required autocomplete="organization"></div>
+                <div class="field"><label for="f2">VAT number <em>(optional)</em></label><input class="input" id="f2" name="vat" inputmode="numeric"></div>` : ""}
+              </div>
+            </section>
+
+            <section class="co-sec" ${contactOnly ? "hidden" : ""} id="shipSec">
+              <header><span class="n">2</span><div><h2>Delivery</h2><small>${esc(D.eta || "Dispatched within 48 hours")}</small></div></header>
+              <div class="co-options" role="radiogroup" aria-label="Delivery method">
+                <label class="co-opt"><input type="radio" name="ship" value="courier" checked><span class="co-opt-ico">${svg.truck}</span><span class="co-opt-txt"><strong>Courier to your door</strong><small id="shipFeeNote">Nationwide, tracked delivery</small></span><b class="co-opt-price" id="shipFee">–</b></label>
+                ${D.collectEnabled ? `<label class="co-opt"><input type="radio" name="ship" value="collect"><span class="co-opt-ico">${svg.home}</span><span class="co-opt-txt"><strong>Collect</strong><small>${esc(D.collectAddress || "From our warehouse")}</small></span><b class="co-opt-price">Free</b></label>` : ""}
+              </div>
+              <div class="fields" id="addrFields">
+                <div class="field full"><label for="f6">Street address</label><input class="input" id="f6" name="street" required autocomplete="address-line1" placeholder="12 Jacaranda Avenue"></div>
+                <div class="field"><label for="f6b">Suburb <em>(optional)</em></label><input class="input" id="f6b" name="suburb" autocomplete="address-line2"></div>
+                <div class="field"><label for="f7">City / town</label><input class="input" id="f7" name="city" required autocomplete="address-level2"></div>
+                <div class="field"><label for="f8">Province</label><select class="select" id="f8" name="province" style="width:100%" required><option value="">Select…</option>${provinces.map((x) => `<option>${x}</option>`).join("")}</select></div>
+                <div class="field"><label for="f9">Postal code</label><input class="input" id="f9" name="postal" inputmode="numeric" maxlength="4" required autocomplete="postal-code"></div>
+                <div class="field full"><label for="f10">Delivery notes <em>(optional)</em></label><input class="input" id="f10" name="notes" placeholder="${biz ? "Loading bay, receiving hours…" : "Gate code, complex name, best time…"}"></div>
+              </div>
+              <p class="co-collect-note" id="collectNote" hidden>${svg.clock} ${esc(D.collectNote || "We'll let you know when it's ready.")}</p>
+            </section>
+
+            <section class="co-sec" id="payCard" ${quote || contactOnly ? "hidden" : ""}>
+              <header><span class="n">3</span><div><h2>Payment</h2><small>All transactions are secure. You won't be charged until you place the order.</small></div></header>
+              <div class="co-options">
+                ${SETTINGS.paymentMethods.map((m, i) => `<label class="co-opt"><input type="radio" name="pay" value="${esc(m.id)}" ${i === 0 ? "checked" : ""}><span class="co-opt-ico">${payIcon[m.id] || svg.wallet}</span><span class="co-opt-txt"><strong>${esc(m.label)}</strong><small>${esc(m.note)}</small></span></label>`).join("") || `<p class="form-hint">No payment methods are available right now. Please contact us.</p>`}
+              </div>
+            </section>
+
+            <section class="co-sec" id="quoteCard" ${quote || contactOnly ? "" : "hidden"}>
+              <header><span class="n">${contactOnly ? 2 : 3}</span><div><h2>${contactOnly ? "Your message" : "Your requirements"}</h2><small>We reply within one business day.</small></div></header>
+              <div class="field"><label for="f11" class="sr">Message</label><textarea class="textarea" id="f11" name="message" placeholder="${contactOnly ? "Product questions, an existing order…" : "Quantities, products not listed, delivery dates, private label…"}"></textarea></div>
+            </section>
+
+            <div class="co-submit">
+              <button class="btn btn-primary btn-block co-pay" type="submit" id="submitBtn">${quote ? "Send quote request" : contactOnly ? "Send message" : "Place order"} ${svg.arrow}</button>
+              <p class="co-legal">By placing your order you agree to our terms and returns policy.</p>
+              <div class="co-trust"><span>${svg.truck}Dispatched in 48h</span><span>${svg.shield}${biz ? "Tax invoice included" : "14-day returns"}</span><span>${svg.lock}Secure checkout</span></div>
+            </div>
+          </form>
+
+          <aside class="co-sum" id="summary" aria-label="Order summary"></aside>
         </div>
-        <button class="btn btn-primary btn-block" type="submit" style="margin-top:20px;height:56px" id="submitBtn">${quote ? "Send quote request" : contactOnly ? "Send message" : "Place order"} ${svg.arrow}</button>
-        <p style="font-size:13px;color:var(--muted);text-align:center;margin-top:12px">By continuing you agree to our terms and returns policy.</p>
-      </form>
-      <aside class="summary" id="summary"></aside>
-    </div>`;
+      </div>
+    </section>`;
   };
 
   views.business = () => `
@@ -652,7 +715,7 @@
         <h3>Trade <span class="serif">perks</span></h3>
         <p>Everything you need to buy smarter, in one account.</p>
         <div class="perks">
-          <div class="perk"><span class="ico">${svg.tag}</span><div><strong>Automatic volume tiers</strong><small>Up to 22% off list price on every line, with no codes needed.</small></div></div>
+          <div class="perk"><span class="ico">${svg.tag}</span><div><strong>Automatic volume tiers</strong><small>Up to ${PR.maxOff()}% off list price on every line, with no codes needed.</small></div></div>
           <div class="perk"><span class="ico">${svg.wallet}</span><div><strong>30-day terms</strong><small>Apply for credit once you have a trading history with us.</small></div></div>
           <div class="perk"><span class="ico">${svg.clock}</span><div><strong>One-click re-orders</strong><small>Save order lists and restock in seconds.</small></div></div>
           <div class="perk"><span class="ico">${svg.user}</span><div><strong>Dedicated account manager</strong><small>A named contact for quotes, stock alerts and new supplier drops.</small></div></div>
@@ -677,10 +740,12 @@
         if (!o || o.ref !== id) return "";
         const pay = o.payment || {};
         return `${o.type === "order" ? `<div class="receipt">${o.items.map((i) => `<div><span>${esc(i.name)} <small>× ${i.qty}${i.kind === "case" ? " cases" : ""}</small></span><b>${money(i.lineInc)}</b></div>`).join("")}
-          <div><span>Delivery</span><b>${o.totals.delivery ? money(o.totals.delivery * 1.15) : "Free"}</b></div>
+          ${o.totals.discount > 0.005 ? `<div><span>Discount</span><b>−${money(o.totals.discount * 1.15)}</b></div>` : ""}
+          <div><span>${o.deliveryMethod === "collect" ? "Collection" : "Delivery"}</span><b>${o.totals.delivery ? money(o.totals.delivery * 1.15) : "Free"}</b></div>
           <div class="r-total"><span>Total incl. VAT</span><b>${money(o.totals.total)}</b></div></div>` : ""}
           ${pay.type === "instructions" ? `<div class="pay-box"><h3>${esc(pay.title)}</h3>${pay.lines.map(([k, v]) => `<div><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join("")}<p>${esc(pay.footer)}</p></div>` : ""}
-          ${pay.type === "none" && pay.message ? `<p class="form-hint">${esc(pay.message)}</p>` : ""}`;
+          ${pay.type === "none" && pay.message ? `<p class="form-hint">${esc(pay.message)}</p>` : ""}
+          ${pay.collect ? `<div class="pay-box light"><h3>Collection</h3><p>${esc(pay.collect.address || "")}</p><p>${esc(pay.collect.note || "")}</p></div>` : ""}`;
       })()}
       ${t !== "account" && user ? `<p class="form-hint">You can follow this ${t === "order" ? "order" : "request"} under <a href="#/account">My account</a>.</p>` : ""}
       <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap"><a href="#/shop" class="btn btn-primary">Continue shopping ${svg.arrow}</a><a href="#/" class="btn btn-ghost">Back home</a></div>
@@ -783,7 +848,7 @@
         const t = tierFor(n), u = unitPrice(p, n), nt = nextTier(n);
         $("#pdpUnit").textContent = money(shown(u));
         $("#pdpWas").textContent = t.off ? money(shown(p.price)) : "";
-        const save = $("#pdpSave"); save.hidden = !t.off; save.textContent = `${t.name} −${t.off * 100}%`;
+        const save = $("#pdpSave"); save.hidden = !t.off; save.textContent = `${t.name} −${Math.round(t.off * 100)}%`;
         $("#pdpUnits").textContent = `${plural(n, "case")} × ${p.pack} = ${(n * p.pack).toLocaleString()} units`;
         $("#pdpLine").textContent = money(shown(u * p.pack * n));
         $$("#tierTable tbody tr").forEach((r) => r.classList.toggle("on", +r.dataset.min === t.min));
@@ -817,7 +882,7 @@
       PRODUCTS.forEach((p) => {
         const n = qtys[p.id] || 0, row = $(`[data-row="${p.id}"]`);
         const u = unitPrice(p, Math.max(1, n)), t = tierFor(n);
-        $(`[data-unit="${p.id}"]`).innerHTML = money(shown(u)) + (n && t.off ? `<span class="tier-pill">−${t.off * 100}%</span>` : "");
+        $(`[data-unit="${p.id}"]`).innerHTML = money(shown(u)) + (n && t.off ? `<span class="tier-pill">−${Math.round(t.off * 100)}%</span>` : "");
         $(`[data-bline="${p.id}"]`).textContent = n ? money(shown(u * p.pack * n)) : "—";
         row.classList.toggle("has", n > 0);
         if (n) { total += u * p.pack * n; lines++; casesN += n; }
@@ -856,54 +921,164 @@
     const form = $("#checkoutForm");
     let quote = form.dataset.quote === "true";
     const contactOnly = !isBiz() && params.get("mode") === "quote";
-    const drawSummary = () => {
-      const t = totals();
-      $("#summary").innerHTML = cart.length ? `
-        <h3>Order summary</h3>
-        <div class="sum-items" data-lenis-prevent>${cart.map((l) => { const p = byId(l.id); return `<div class="sum-item">${art(p)}<div><strong>${esc(p.name)}</strong><small>${lineLabel(l)}${l.kind === "case" ? ` · ${(l.qty * p.pack).toLocaleString()} units` : ""}</small></div><b>${money(isBiz() ? lineEx(l) : lineEx(l) * 1.15)}</b></div>`; }).join("")}</div>
-        ${totalsHTML(t)}
-        <button class="btn btn-ghost btn-sm btn-block" type="button" data-open-cart style="margin-top:16px">Edit cart</button>`
-        : `<h3>Order summary</h3><p style="color:var(--muted)">${quote || contactOnly ? "Your cart is empty. That's fine here; just tell us what you need in the form." : "Your cart is empty."}</p><a href="#/shop" class="btn btn-primary btn-sm" style="margin-top:16px">Browse products</a>`;
+    if (cart.length && !quote && !contactOnly) track("checkout", { path: "/checkout" });
+
+    let code = "", codeMsg = null, server = null, previewSeq = 0, sumOpen = false;
+    const ship = () => (form.elements.ship ? (form.querySelector("input[name=ship]:checked") || {}).value : "courier") || "courier";
+    const inc = !isBiz() || incVat;                                   // show prices incl. VAT?
+    const show$ = (ex) => money(inc ? ex * (1 + VAT_RATE) : ex);
+
+    // ---- local estimate (instant) and server quote (authoritative) ----
+    const localTotals = () => {
+      const t = PR.totals(cart, byId, { collect: ship() === "collect" });
+      return { sub: t.sub, discount: 0, goods: t.goods, delivery: t.delivery, vat: t.vat, total: t.total, saving: t.saving, hasCase: t.hasCase, freeAt: t.hasCase ? t.freeAtEx : t.freeAtEx * (1 + VAT_RATE) };
     };
-    drawSummary();
-    const ms = $(".mode-switch");
-    if (ms) ms.addEventListener("click", (e) => {
+    async function refreshQuote() {
+      const seq = ++previewSeq;
+      if (!cart.length) { server = null; draw(); return; }
+      try {
+        const r = await api("/api/checkout/preview", { method: "POST", body: { lines: cart.map(({ id, kind, qty }) => ({ id, kind, qty })), code, deliveryMethod: ship() } });
+        if (seq !== previewSeq) return;
+        server = r.totals;
+        codeMsg = r.discount;
+        if (r.discount && !r.discount.ok) code = "";
+        draw();
+        if (r.issues && r.issues.length) {
+          const s = r.issues.find((x) => x.issue === "stock");
+          if (s) { const p = byId(s.id); toast(p, s.available > 0 ? `Only ${s.available} units of ${p ? p.name : "an item"} left. Please lower the quantity.` : `${p ? p.name : "An item"} just sold out. Please remove it.`); }
+        }
+      } catch (err) { if (seq === previewSeq) { server = null; draw(); if (err.status === 403) toast(null, err.message); } }
+    }
+
+    function draw() {
+      const t = server || localTotals();
+      const freeLeft = t.hasCase ? Math.max(0, t.freeAt - t.goods) : Math.max(0, t.freeAt - t.goods * (1 + VAT_RATE));
+      const collect = ship() === "collect";
+      // delivery option price
+      const fee = $("#shipFee");
+      if (fee) {
+        const courier = PR.totals(cart, byId, { discountEx: t.discount }).delivery;
+        fee.textContent = !cart.length ? "–" : courier ? show$(courier) : "Free";
+        $("#shipFeeNote").textContent = courier && cart.length ? `Free over ${money(t.freeAt)}${t.hasCase ? " excl. VAT" : ""}` : "Nationwide, tracked delivery";
+      }
+      $("#addrFields") && ($("#addrFields").hidden = collect);
+      $("#collectNote") && ($("#collectNote").hidden = !collect);
+      $$("#addrFields [name=street], #addrFields [name=city], #addrFields [name=province], #addrFields [name=postal]").forEach((i) => { i.required = !collect && !contactOnly; });
+
+      const btn = $("#submitBtn");
+      if (btn && !btn.disabled && !quote && !contactOnly) btn.innerHTML = cart.length ? `Place order · ${money(t.total)} ${svg.arrow}` : `Place order ${svg.arrow}`;
+
+      const items = cart.map((l) => {
+        const p = byId(l.id); if (!p) return "";
+        const k = keyOf(l);
+        return `<div class="co-item">
+          <div class="co-thumb">${art(p)}<span class="co-qty-badge">${l.qty}</span></div>
+          <div class="co-item-info"><strong>${esc(p.name)}</strong><small>${l.kind === "case" ? `Case of ${p.pack} · ${(l.qty * p.pack).toLocaleString()} units` : `${money(p.rrp)} each`}</small>
+            <div class="co-item-ctl"><div class="stepper sm"><button type="button" data-step="${k}" data-d="-1" aria-label="Decrease">−</button><input type="number" min="0" value="${l.qty}" data-coqty="${k}" aria-label="Quantity of ${esc(p.name)}"><button type="button" data-step="${k}" data-d="1" aria-label="Increase">+</button></div><button type="button" class="li-remove" data-remove="${k}">Remove</button></div></div>
+          <b class="co-item-price">${show$(lineEx(l))}</b></div>`;
+      }).join("");
+
+      $("#summary").innerHTML = `
+        <button type="button" class="co-sum-toggle" aria-expanded="${sumOpen}">${svg.cart}<span>${sumOpen ? "Hide" : "Show"} order summary</span><b>${cart.length ? money(t.total) : ""}</b></button>
+        <div class="co-sum-body ${sumOpen ? "open" : ""}">
+          <h3>Order summary <small>${plural(itemCount(), "item")}</small></h3>
+          ${cart.length ? `<div class="co-items" data-lenis-prevent>${items}</div>` : `<p class="form-hint">${quote || contactOnly ? "Your cart is empty. That's fine here; just tell us what you need." : "Your cart is empty."}</p><a href="#/shop" class="btn btn-primary btn-sm" style="margin-top:12px">Browse products</a>`}
+          ${cart.length && !contactOnly ? `
+          <form class="co-code" id="codeForm" novalidate><label for="codeIn" class="sr">Discount code</label>
+            <input class="input" id="codeIn" placeholder="Discount code" value="${esc(code)}" autocomplete="off" spellcheck="false">
+            <button class="btn btn-ghost btn-sm" type="submit">Apply</button></form>
+          ${codeMsg && codeMsg.message ? `<p class="co-code-msg ${codeMsg.ok ? "ok" : "err"}">${codeMsg.ok ? svg.check : ""}${esc(codeMsg.message)}${codeMsg.ok ? ' <button type="button" class="li-remove" id="codeRemove">Remove</button>' : ""}</p>` : ""}
+          ${!collect && freeLeft > 0.005 ? `<div class="ship-meter">Add <b>${money(freeLeft)}</b> more for <b>free delivery</b><div class="meter"><i style="width:${Math.min(100, (1 - freeLeft / t.freeAt) * 100)}%"></i></div></div>` : ""}
+          <div class="co-totals">
+            <div><span>Subtotal</span><b>${show$(t.sub)}</b></div>
+            ${t.saving > 0.005 ? `<div class="good"><span>Volume savings</span><b>−${show$(t.saving)}</b></div>` : ""}
+            ${t.discount > 0.005 ? `<div class="good"><span>Discount ${codeMsg && codeMsg.code ? `<em>${esc(codeMsg.code)}</em>` : ""}</span><b>−${show$(t.discount)}</b></div>` : ""}
+            <div><span>${collect ? "Collection" : "Delivery"}</span><b>${collect || !t.delivery ? "Free" : show$(t.delivery)}</b></div>
+            ${inc ? "" : `<div><span>VAT (15%)</span><b>${money(t.vat)}</b></div>`}
+            <div class="grand"><span>Total</span><span><small>ZAR</small> ${money(t.total)}</span></div>
+            ${inc ? `<div class="vat-note"><span>Includes ${money(t.vat)} VAT</span></div>` : ""}
+          </div>` : ""}
+        </div>`;
+      wireSummary();
+    }
+
+    function wireSummary() {
+      $(".co-sum-toggle")?.addEventListener("click", () => { sumOpen = !sumOpen; draw(); });
+      $("#codeForm")?.addEventListener("submit", (e) => {
+        e.preventDefault();
+        const v = $("#codeIn").value.trim();
+        if (!v) return;
+        code = v.toUpperCase(); codeMsg = null; refreshQuote();
+      });
+      $("#codeRemove")?.addEventListener("click", () => { code = ""; codeMsg = null; refreshQuote(); });
+      $$("[data-coqty]").forEach((i) => i.addEventListener("change", () => { setQty(i.dataset.coqty, parseInt(i.value, 10) || 0); }));
+    }
+
+    // cart changes (steppers/remove use the global handlers) -> re-quote
+    const onCart = () => { if (!document.body.contains(form)) { window.removeEventListener("mpm:cart", onCart); return; } draw(); clearTimeout(onCart.t); onCart.t = setTimeout(refreshQuote, 250); };
+    window.addEventListener("mpm:cart", onCart);
+
+    // modes (business: order vs quote)
+    $(".mode-switch")?.addEventListener("click", (e) => {
       const b = e.target.closest("[data-cmode]"); if (!b) return;
       quote = b.dataset.cmode === "quote";
       $$(".mode-switch button").forEach((x) => x.classList.toggle("on", x === b));
-      $("#payCard").hidden = quote; $("#quoteCard").hidden = !quote;
-      $("#submitBtn").innerHTML = (quote ? "Send quote request " : "Place order ") + svg.arrow;
+      $("#payCard").hidden = quote; $("#quoteCard").hidden = !quote; $(".co-steps") && ($(".co-steps").hidden = quote);
+      $("#submitBtn").innerHTML = quote ? `Send quote request ${svg.arrow}` : `Place order ${svg.arrow}`;
+      draw();
     });
-    // prefill from the signed-in account
+
+    // delivery method
+    form.addEventListener("change", (e) => { if (e.target.name === "ship") { draw(); refreshQuote(); } });
+
+    // remember what the customer typed (this browser tab only)
+    const KEY = "mpm_checkout_form";
+    try {
+      const saved = JSON.parse(sessionStorage.getItem(KEY) || "{}");
+      for (const [k, v] of Object.entries(saved)) { const el = form.elements[k]; if (el && el.type !== "radio" && !el.value) el.value = v; }
+    } catch { /* ignore */ }
     if (user) {
       const set = (n, v) => { const el = form.elements[n]; if (el && !el.value && v) el.value = v; };
       set("name", user.name); set("email", user.email); set("phone", user.phone); set("business", user.businessName); set("vat", user.vatNumber);
     }
+    form.addEventListener("input", () => {
+      try { const d = Object.fromEntries(new FormData(form)); delete d.pay; delete d.ship; sessionStorage.setItem(KEY, JSON.stringify(d)); } catch { /* ignore */ }
+      // progress indicator: details done once contact + address look complete
+      const need = $$("[required]", form).filter((i) => !i.closest("[hidden]"));
+      const ok = need.every((i) => i.value.trim());
+      $("#stDetails")?.classList.toggle("ok", ok); $("#stPay")?.classList.toggle("on", ok);
+    });
+
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
-      const req = $$("[required]", form).filter((i) => !i.closest("[hidden]"));
-      const bad = req.filter((i) => !i.value.trim() || (i.type === "email" && !/^\S+@\S+\.\S+$/.test(i.value)));
-      req.forEach((i) => { i.style.borderColor = bad.includes(i) ? "var(--pink)" : ""; });
+      const need = $$("[required]", form).filter((i) => !i.closest("[hidden]"));
+      const bad = need.filter((i) => !i.value.trim() || (i.type === "email" && !/^\S+@\S+\.\S+$/.test(i.value)));
+      need.forEach((i) => { i.classList.toggle("invalid", bad.includes(i)); });
       if (bad.length) { bad[0].focus(); toast(null, "Please complete the highlighted fields"); return; }
       if (!quote && !contactOnly && !cart.length) { toast(null, "Your cart is empty. Add products first."); return; }
+      if (!quote && !contactOnly && !form.querySelector("input[name=pay]:checked")) { toast(null, "Please choose a payment method"); return; }
       const type = contactOnly ? "contact" : quote ? "quote" : "order";
       const fd = Object.fromEntries(new FormData(form));
-      const btn = $("#submitBtn"); btn.disabled = true; const label = btn.innerHTML; btn.innerHTML = "Sending…";
+      const btn = $("#submitBtn"); btn.disabled = true; const label = btn.innerHTML; btn.innerHTML = `<span class="spin"></span> ${type === "order" ? "Placing your order…" : "Sending…"}`;
       try {
         const res = await api("/api/orders", { method: "POST", body: {
-          type, mode: mode || "home", payMethod: fd.pay, message: fd.message || "",
+          type, mode: mode || "home", payMethod: fd.pay, message: fd.message || "", code: type === "order" ? code : "", deliveryMethod: ship(),
           lines: type === "contact" ? [] : cart.map(({ id, kind, qty }) => ({ id, kind, qty })),
-          customer: { name: fd.name, email: fd.email, phone: fd.phone, business: fd.business, vat: fd.vat, street: fd.street, city: fd.city, province: fd.province, postal: fd.postal, notes: fd.notes },
+          customer: { name: fd.name, email: fd.email, phone: fd.phone, business: fd.business, vat: fd.vat, street: fd.street, suburb: fd.suburb, city: fd.city, province: fd.province, postal: fd.postal, notes: fd.notes },
         } });
-        try { sessionStorage.setItem("mpm_last_order", JSON.stringify(res)); } catch { /* ignore */ }
+        try { sessionStorage.setItem("mpm_last_order", JSON.stringify(res)); sessionStorage.removeItem(KEY); } catch { /* ignore */ }
         if (type === "order") { cart = []; saveCart(); loadCatalog().catch(() => {}); }
         if (res.payment && res.payment.type === "redirect") { location.href = res.payment.url; return; }
         location.hash = `#/done/${res.ref}?t=${type}`;
       } catch (err) {
         toast(null, err.message);
         btn.disabled = false; btn.innerHTML = label;
+        if (err.status === 409 || err.status === 400) refreshQuote();
       }
     });
+
+    draw();
+    refreshQuote();
   }
 
   function mountBusiness() {
@@ -949,7 +1124,6 @@
         </div>
         <button class="btn btn-primary btn-block" type="submit" style="margin-top:18px">Save changes</button></form>
         ${user.tradeStatus === "none" ? `<a href="#/business" class="btn btn-ghost btn-block" style="margin-top:14px">Apply for a trade account ${svg.arrow}</a>` : ""}
-        ${user.role === "admin" ? `<a href="/admin" class="btn btn-pink btn-block" style="margin-top:14px">Open admin dashboard ${svg.arrow}</a>` : ""}
         <button class="btn btn-ghost btn-block" type="button" id="logoutBtn" style="margin-top:14px">Sign out</button>
       </div>
     </div>` : `
@@ -1142,6 +1316,8 @@
       observe();
       if (!anchor) scrollToTop();
       lastKey = key;
+      track("pageview", { path: name === "home" ? "/" : "/" + [name, id].filter(Boolean).join("/"), referrer: firstView ? document.referrer : "" });
+      firstView = false;
       document.title = { home: "MPM Digital — Everything for the home, priced for everyone", shop: "Shop — MPM Digital", product: (byId(id) || {}).name + " — MPM Digital", bulk: "Bulk order — MPM Digital", checkout: "Checkout — MPM Digital", account: "My account — MPM Digital", business: "For business — MPM Digital" }[name] || "MPM Digital";
       requestAnimationFrame(refreshScroll);
     }

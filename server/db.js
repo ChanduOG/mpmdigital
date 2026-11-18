@@ -11,8 +11,19 @@ const { createClient } = require("@libsql/client");
 
 const ON_VERCEL = !!process.env.VERCEL;
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "..", "data");
-const REMOTE_URL = process.env.TURSO_DATABASE_URL || process.env.LIBSQL_URL || "";
-const AUTH_TOKEN = process.env.TURSO_AUTH_TOKEN || process.env.LIBSQL_AUTH_TOKEN || "";
+// Find the database settings. The Vercel ↔ Turso integration sets TURSO_DATABASE_URL and
+// TURSO_AUTH_TOKEN; if a custom prefix was chosen when connecting (e.g. STORE_TURSO_DATABASE_URL),
+// we pick that up too.
+function findDbEnv() {
+  const env = process.env;
+  if (env.TURSO_DATABASE_URL) return { url: env.TURSO_DATABASE_URL, token: env.TURSO_AUTH_TOKEN || "" };
+  if (env.LIBSQL_URL) return { url: env.LIBSQL_URL, token: env.LIBSQL_AUTH_TOKEN || "" };
+  const key = Object.keys(env).find((k) => /DATABASE_URL$/.test(k) && /^(libsql|https?|wss?):\/\//.test(env[k] || "") && /turso|libsql/i.test(k + env[k]));
+  if (!key) return { url: "", token: "" };
+  const prefix = key.slice(0, -"DATABASE_URL".length);
+  return { url: env[key], token: env[prefix + "AUTH_TOKEN"] || "" };
+}
+const { url: REMOTE_URL, token: AUTH_TOKEN } = findDbEnv();
 
 let url, readOnly = false;
 if (REMOTE_URL) url = REMOTE_URL;
@@ -135,6 +146,52 @@ CREATE TABLE IF NOT EXISTS subscribers (
   email TEXT PRIMARY KEY COLLATE NOCASE,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  day TEXT NOT NULL,                 -- YYYY-MM-DD in South African time
+  ts TEXT NOT NULL DEFAULT (datetime('now')),
+  type TEXT NOT NULL,                -- pageview | add_to_cart | checkout | order
+  path TEXT DEFAULT '',
+  product_id TEXT DEFAULT '',
+  visitor TEXT NOT NULL,             -- anonymous daily-rotating hash (no cookies, no IP stored)
+  referrer TEXT DEFAULT '',          -- referring domain only
+  device TEXT DEFAULT '',            -- mobile | tablet | desktop
+  country TEXT DEFAULT '',
+  mode TEXT DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_events_day ON events(day, type);
+CREATE TABLE IF NOT EXISTS discounts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  code TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  type TEXT NOT NULL DEFAULT 'percent',      -- percent | fixed (Rand off, incl. VAT)
+  value REAL NOT NULL,
+  min_spend REAL NOT NULL DEFAULT 0,         -- incl. VAT, goods only
+  applies_to TEXT NOT NULL DEFAULT 'all',    -- all | home | trade
+  starts_at TEXT DEFAULT '',                 -- YYYY-MM-DD (optional)
+  ends_at TEXT DEFAULT '',                   -- YYYY-MM-DD (optional, inclusive)
+  max_uses INTEGER NOT NULL DEFAULT 0,       -- 0 = unlimited
+  uses INTEGER NOT NULL DEFAULT 0,
+  active INTEGER NOT NULL DEFAULT 1,
+  note TEXT DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS stock_movements (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  product_id TEXT NOT NULL,
+  change INTEGER NOT NULL,                   -- units (+ in, - out)
+  balance INTEGER NOT NULL,                  -- stock after the change
+  reason TEXT NOT NULL,                      -- sale | cancel | restock | adjust | damaged | count | edit | new
+  ref TEXT DEFAULT '',                       -- order ref, supplier invoice, etc.
+  note TEXT DEFAULT '',
+  by_user TEXT DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_moves_product ON stock_movements(product_id, id);
 CREATE INDEX IF NOT EXISTS idx_orders_user ON orders(user_id);
 CREATE INDEX IF NOT EXISTS idx_orders_created ON orders(created_at);
 CREATE INDEX IF NOT EXISTS idx_items_order ON order_items(order_id);
@@ -148,10 +205,25 @@ async function seed() {
     for (const c of categories)
       await t.run("INSERT OR IGNORE INTO categories (id,name,blurb,icon,tone,sort) VALUES (?,?,?,?,?,?)", c.id, c.name, c.blurb, c.icon, c.tone, c.sort);
     for (const p of products)
-      await t.run(`INSERT OR IGNORE INTO products (id,name,cat,icon,sku,supplier,pack,moq,price,rrp,stock_units,badge,description,specs,image,sort)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, p.id, p.name, p.cat, p.icon, p.sku, p.supplier, p.pack, p.moq, p.price, p.rrp, p.stock_units, p.badge, p.description, JSON.stringify(p.specs), p.image, p.sort);
+      await t.run(`INSERT OR IGNORE INTO products (id,name,cat,icon,sku,supplier,pack,moq,price,rrp,cost,stock_units,badge,description,specs,image,sort)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, p.id, p.name, p.cat, p.icon, p.sku, p.supplier, p.pack, p.moq, p.price, p.rrp, p.cost || 0, p.stock_units, p.badge, p.description, JSON.stringify(p.specs), p.image, p.sort);
   });
   console.log(`[db] seeded ${categories.length} categories and ${products.length} products`);
+}
+
+// Add columns introduced after the first release (safe to run every start).
+const COLUMNS = [
+  ["products", "cost", "REAL NOT NULL DEFAULT 0"],              // supplier cost per unit, excl. VAT
+  ["orders", "discount_code", "TEXT DEFAULT ''"],
+  ["orders", "discount", "REAL DEFAULT 0"],                      // excl. VAT
+  ["orders", "delivery_method", "TEXT DEFAULT 'courier'"],      // courier | collect
+  ["order_items", "unit_cost", "REAL DEFAULT 0"],                // cost at time of sale, excl. VAT
+];
+async function migrate() {
+  for (const [table, col, def] of COLUMNS) {
+    const cols = toObjects(await client.execute(`PRAGMA table_info(${table})`)).map((c) => c.name);
+    if (!cols.includes(col)) await client.execute(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`);
+  }
 }
 
 let ready = null;
@@ -162,6 +234,7 @@ function init(afterSchema) {
       if (isLocalFile) await client.executeMultiple("PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;");
       await client.execute("PRAGMA foreign_keys = ON");
       await client.executeMultiple(SCHEMA);
+      await migrate();
       await seed();
       if (afterSchema) await afterSchema();
       if (readOnly) console.warn("[db] No TURSO_DATABASE_URL set on Vercel: running in read-only preview mode.");

@@ -4,8 +4,22 @@
     {
       "name": "mpm-store",
       "runtimeExecutable": "node",
-      "runtimeArgs": ["--env-file-if-exists=.env", "server/server.js"],
+      "runtimeArgs": [
+        "--env-file-if-exists=.env",
+        "server/server.js",
+        "store"
+      ],
       "port": 3000
+    },
+    {
+      "name": "mpm-admin",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "--env-file-if-exists=.env",
+        "server/server.js",
+        "admin"
+      ],
+      "port": 3001
     }
   ]
 }

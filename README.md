@@ -1,96 +1,86 @@
-# MPM Digital — household products store
+# MPM Digital
 
-A working online store for **everyday shoppers and wholesale buyers**, in pink, burgundy and light purple.
-It runs on Node.js with a SQLite-compatible database (a local file in development, [Turso](https://turso.tech) when hosted on Vercel).
+A complete household-products business: a **shop** for everyday shoppers and approved trade buyers, and a
+separate **back office** where you run everything (orders, stock, products, finances, customers, settings).
 
-## Run it
-Requires Node.js 22.9 or newer.
+Both apps live in this one repo, share one database, and are **deployed separately** (two Vercel projects).
+**Going live:** follow [SETUP-VERCEL.md](SETUP-VERCEL.md).
+
+## Run it on your computer
+Requires Node.js 22.9+.
 
 ```bash
 npm install
-cp .env.example .env      # then edit .env (admin email/password, bank details)
+cp .env.example .env
+```
+Edit `.env` (admin email and password), then start each app in its own terminal:
+
+```bash
 npm start
 ```
+```bash
+npm run admin
+```
 - Shop: http://localhost:3000
-- Admin: http://localhost:3000/admin (sign in with `ADMIN_EMAIL` / `ADMIN_PASSWORD` from `.env`)
+- Back office: http://localhost:3001
 
-On first start the database (`data/mpm.db`) is created and filled with the starter catalogue and photos.
-To start over, stop the server, delete the `data/` folder, and start it again.
+Locally the database is the file `data/mpm.db`. To start over, stop both apps and delete the `data/` folder.
 
-## Hosting on Vercel
-Vercel serves `public/` as the website and runs the API from `api/index.js` as a serverless function (`vercel.json` wires this up).
-Vercel's disk is temporary, so the store needs two free add-ons. Set both up once in the Vercel dashboard:
+## The shop
+- **Home and Business modes:** retail prices per item (incl. VAT) for everyone; wholesale case prices, volume tiers,
+  bulk order sheet and quotes **only for approved trade accounts**. The server never sends wholesale prices to anyone else.
+- **Checkout:** a step tracker; contact, delivery (courier or optional free collection) and payment cards; live order summary
+  with photos and quantity controls; **discount codes**; free-delivery progress; totals calculated by the server; form
+  remembered if the customer leaves; mobile summary toggle.
+- **Payments:** EFT with bank details and order reference, plus 30-day account for approved trade customers.
+  Card and Instant EFT plug in later (see below).
+- **Accounts:** register, sign in, order history, profile, trade applications. Plus the newsletter.
+- **Experience:** branded loading screen, smooth scrolling and scroll animations, real product photos,
+  and anonymous, cookie-free visitor analytics.
 
-1. **Database (Turso):** Project → **Storage** (or **Integrations → Marketplace**) → add **Turso**, create a database and connect it to this project.
-   This adds `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN`. (Or create a database at turso.tech and add those two variables yourself.)
-2. **Photo uploads (Blob):** Project → **Storage** → **Create** → **Blob** → connect to this project. This adds `BLOB_READ_WRITE_TOKEN`.
-3. **Environment variables:** Project → **Settings → Environment Variables**: add `ADMIN_EMAIL`, `ADMIN_PASSWORD` (10+ chars),
-   `STORE_EMAIL`, `BANK_NAME`, `BANK_ACCOUNT_NAME`, `BANK_ACCOUNT_NUMBER`, `BANK_BRANCH_CODE`.
-4. **Redeploy** (Deployments → ⋯ → Redeploy). On first request the tables are created, the starter catalogue is loaded and your admin account is made.
+## The back office (separate app)
+| Section | What you can do |
+|---|---|
+| **Dashboard** | revenue, orders, visitors, conversion and average order vs the previous period; needs-attention list; low stock |
+| **Traffic** | visits and page views, shopping funnel, top pages and products, traffic sources, devices, countries |
+| **Sales** | revenue per day (home vs trade), best sellers, order statuses, payment methods |
+| **Finances** | money received, awaiting EFT (with one-click "Mark paid"), owed on 30-day accounts and by whom, VAT collected, discounts given, **cost of goods and gross profit**, month-by-month table, stock value, **export for your accountant** |
+| **Orders** | search and filter; status and payment; notes; **refund** (returns stock); **print invoice / packing slip**; CSV |
+| **Quotes & messages** | quote requests and contact messages |
+| **Products** | add or edit everything, including **cost price** with profit per unit; photos; visibility; specs; CSV |
+| **Inventory** | receive stock (in units or cases), record damaged stock and stock counts; full **stock movement history** |
+| **Categories** | add, rename, reorder, recolour, change icon, delete |
+| **Discount codes** | % or Rand off, minimum spend, home or trade only, start/end dates, usage limits, usage stats |
+| **Customers** | history, edit details, grant or revoke trade pricing, CSV |
+| **Trade accounts** | approve, reject or revoke applications |
+| **Subscribers** | newsletter list with CSV |
+| **Settings** | store details, EFT bank details, delivery fees, collection, delivery time text, volume discount tiers, payment methods, announcement bar |
+| **Team** | add or remove admins; change your password |
 
-Check it at `https://<your-site>/api/health`: it should say `"database":"connected"`.
-Until the database is connected, the site runs in **preview mode**: products show, but checkout and sign-in politely say ordering isn't open yet.
-
-## What works
-**Shop**
-- Two ways to shop: **Home** (single items at retail prices incl. VAT) and **Business** (by the case, with volume tiers of up to 22% off, an ex/incl VAT toggle, a bulk order sheet and quote requests).
-- **Wholesale prices are private.** Only approved trade accounts (and admins) receive wholesale prices from the server; everyone else only ever gets retail prices. Business mode, the bulk order sheet, case upsells and the savings calculator are locked behind sign-in/approval, and the server refuses case orders from anyone else. Approve trade accounts in **Admin → Trade accounts**.
-- Live catalogue, prices and stock come from the database. Sold-out items can't be bought.
-- **Checkout creates real orders.** The server recalculates every price and checks stock and minimum order quantities. Stock is reserved when an order is placed.
-- EFT payment shows your banking details with the order reference. Approved trade customers can also pay on a **30-day account**.
-- Customer accounts: register, sign in, order history and profile.
-- Trade applications create a business account for review. Quote requests, contact messages and newsletter sign-ups are stored too.
-
-**Admin dashboard (`/admin`)**
-- **Overview:** revenue, orders awaiting payment, orders to ship, low stock.
-- **Orders:** details, delivery address, status (awaiting payment → paid → processing → shipped → delivered, or cancelled) and internal notes. Cancelling an order returns its stock.
-- **Products:** edit prices, stock, case size, MOQ, badges and specs, upload photos, add new products, and hide or show products.
-- **Trade accounts:** approve or reject applications. Approval unlocks 30-day terms at checkout.
-- **Customers and subscribers:** lists you can export to CSV.
-
-**Security basics:** hashed passwords (scrypt), HttpOnly session cookies, server-side price checks, CSRF protection,
-login rate-limiting, a strict Content-Security-Policy, upload checks and an admin-only API.
-
-## Connecting payments later
-Everything payment-related is in **`server/payments.js`**:
-- `card` and `instant-eft` are already defined but switched off. Implement `start()` (build the gateway redirect) and `notify()` (verify the gateway's callback, then call `markPaid(ref)`), then enable them in `.env` (`CARD_GATEWAY`, `INSTANT_EFT_GATEWAY`).
-- Gateway callbacks arrive at `POST /api/payments/<method>/notify`.
-- Checkout only offers methods that are enabled, so nothing appears until it's connected.
-
-Emails (order confirmations, new-order alerts) are stubbed in **`server/notify.js`**. Connect SMTP or an email API there.
+## Payments and email (to connect later)
+- **Card / Instant EFT:** `server/payments.js` (switched off until configured; checkout only shows enabled methods).
+- **Order emails:** `server/notify.js`.
 
 ## Project layout
 ```
-api/
-  index.js       Vercel serverless entry (wraps server/app.js)
+api/index.js            Vercel entry point (runs the shop OR the admin, depending on APP_ROLE)
 server/
-  app.js         API + admin endpoints (shared by local server and Vercel)
-  server.js      local web server (npm start)
-  db.js          database (local file or Turso), schema and first-run seed
-  auth.js        passwords, sessions, admin bootstrap
-  payments.js    payment methods (plug gateways in here)
-  notify.js      notifications (plug email in here)
-  seed/catalog.json   starter categories & products
-public/
-  index.html     storefront
-  admin.html     admin dashboard
-  assets/js/pricing.js   pricing rules shared by the browser and the server
-  assets/img/products/   starter product photos (see CREDITS.md)
-data/            database + uploaded photos (created automatically, not committed)
+  app.js                request handler (loads only the store API or only the admin API)
+  store-api.js          shop API: catalogue, checkout, orders, accounts, tracking
+  admin-api.js          back-office API: everything in the table above
+  core.js               shared helpers (pricing on the server, discounts, stock log)
+  db.js                 database (local file or Turso), schema, upgrades, first-run seed
+  auth.js settings.js analytics.js payments.js notify.js
+  seed/catalog.json     starter categories and products
+scripts/build.js        packages one app into dist/<app> (the shop build has no admin files)
+public/                 source files for both apps (index.html = shop, admin.html = back office)
+  assets/js/pricing.js  pricing rules shared by the browser and the server
 ```
 
-## Pricing rules
-Volume tiers, VAT and delivery thresholds are in `public/assets/js/pricing.js`. The server uses the same file,
-so the shop and checkout always agree. Product prices are edited in the admin dashboard:
-- **Wholesale price:** per unit, excl. VAT (tier 1)
-- **Retail price (RRP):** per unit, incl. VAT (what home shoppers pay)
-
-## Going live checklist
-- [ ] On Vercel: connect Turso + Blob and set the environment variables (see above). Elsewhere: any Node host with a persistent disk for `data/`.
-- [ ] HTTPS: automatic on Vercel. On other hosts, put it behind HTTPS and set `COOKIE_SECURE=1`.
-- [ ] Set a strong `ADMIN_PASSWORD`, real bank details and `STORE_EMAIL` in `.env`.
-- [ ] Replace the starter photos (Unsplash stand-ins, see `public/assets/img/products/CREDITS.md`) and the sample products with your suppliers' real lines.
-- [ ] Replace the sample reviews and headline stats on the home page.
-- [ ] Connect a payment gateway and email (see above).
-- [ ] Add your terms, privacy policy (POPIA) and returns policy pages.
-- [ ] Back up the database (Turso has point-in-time backups; locally, copy `data/mpm.db`).
+## Going-live checklist
+- [ ] Follow [SETUP-VERCEL.md](SETUP-VERCEL.md): Turso, both projects, Blob, environment variables.
+- [ ] Back office → Settings: store details, bank details, delivery fees.
+- [ ] Back office → Products: real products, cost prices and photos (the starter photos are Unsplash stand-ins).
+- [ ] Replace the sample reviews and headline stats on the shop home page.
+- [ ] Add terms, privacy policy (POPIA) and returns policy pages.
+- [ ] Connect a card payment gateway and order emails.
