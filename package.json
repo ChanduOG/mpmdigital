@@ -9,7 +9,8 @@
     "admin": "node --env-file-if-exists=.env server/server.js admin",
     "dev:store": "node --watch --env-file-if-exists=.env server/server.js store",
     "dev:admin": "node --watch --env-file-if-exists=.env server/server.js admin",
-    "build": "node scripts/build.js"
+    "build": "node scripts/build.js",
+    "import-catalog": "node --env-file-if-exists=.env scripts/import-catalog.js"
   },
   "engines": {
     "node": ">=22"

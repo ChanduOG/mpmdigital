@@ -80,7 +80,7 @@ public/                 source files for both apps (index.html = shop, admin.htm
 ## Going-live checklist
 - [ ] Follow [SETUP-VERCEL.md](SETUP-VERCEL.md): Turso, both projects, Blob, environment variables.
 - [ ] Back office → Settings: store details, bank details, delivery fees.
-- [ ] Back office → Products: real products, cost prices and photos (the starter photos are Unsplash stand-ins).
-- [ ] Replace the sample reviews and headline stats on the shop home page.
+- [ ] Back office → Products: set your selling prices, cost prices and stock for the Grace Home range.
+- [ ] Add real customer reviews once you have them.
 - [ ] Add terms, privacy policy (POPIA) and returns policy pages.
 - [ ] Connect a card payment gateway and order emails.

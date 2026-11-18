@@ -19,7 +19,7 @@ function register(route) {
     const categories = await db.all("SELECT id, name, blurb, icon, tone, sort FROM categories ORDER BY sort, name");
     const products = (await db.all("SELECT * FROM products WHERE active = 1 ORDER BY sort, name")).map(rowToProduct)
       // never expose stock counts or supplier cost; only approved trade accounts receive wholesale prices
-      .map(({ stockUnits, active, price, cost, updatedAt, ...p }) => (trade ? { ...p, price } : p));
+      .map(({ stockUnits, active, price, cost, updatedAt, supplier, ...p }) => (trade ? { ...p, price } : p));
     return {
       categories, products,
       tiers: P.TIERS,                              // discount percentages only (no prices)

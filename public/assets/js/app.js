@@ -39,7 +39,8 @@
 
   async function loadCatalog() {
     const c = await api("/api/catalog");
-    CATEGORIES = c.categories; PRODUCTS = c.products; SETTINGS = c.settings;
+    PRODUCTS = c.products; SETTINGS = c.settings;
+    CATEGORIES = c.categories.filter((cat) => PRODUCTS.some((p) => p.cat === cat.id));   // hide empty categories
     PR.configure({ ...SETTINGS, tiers: c.tiers });
     const ann = document.querySelector(".announce-track");
     if (ann && Array.isArray(SETTINGS.announcement) && SETTINGS.announcement.length) {
@@ -286,7 +287,7 @@
     return `<article class="card reveal" style="--d:${(i % 4) * 0.06}s">
       <a href="#/product/${p.id}" class="card-media" aria-label="${esc(p.name)}">${art(p)}
         ${p.badge ? `<span class="badge ${badgeCls}">${esc(p.badge)}</span>` : ""}
-        <span class="card-margin">${isBiz() ? `Up to <b>${margin(p)}%</b> margin` : `<b>★ 4.${7 + (p.id.length % 3)}</b> · ${p.stock === "low" ? "Selling fast" : "Free delivery R750+"}`}</span></a>
+        <span class="card-margin">${isBiz() ? `Up to <b>${margin(p)}%</b> margin` : (p.stock === "low" ? "Only a few left" : `Free delivery over ${money0(PR.HOME_FREE_DELIVERY)}`)}</span></a>
       <div class="card-body">
         <div class="card-meta"><span>${esc(c.name)}</span><span class="stock ${p.stock}">${p.stock === "out" ? "Sold out" : p.stock === "low" ? "Low stock" : "In stock"}</span></div>
         <h3><a href="#/product/${p.id}">${esc(p.name)}</a></h3>
@@ -301,7 +302,7 @@
       <div class="mq-price">${isBiz() ? `Case of ${p.pack} · RRP ${money0(p.rrp)}` : `${esc(catOf(p).name)}`}</div>
       <div class="mq-stats">${isBiz()
         ? `<div><strong>${money(shown(bestUnit(p)))}</strong><small>best unit price</small></div><span class="up">▲ ${margin(p)}%</span>`
-        : `<div><strong>${money(p.rrp)}</strong><small>each, incl. VAT</small></div><span class="up">★ 4.${7 + (p.id.length % 3)}</span>`}</div></div></a>`;
+        : `<div><strong>${money(p.rrp)}</strong><small>each, incl. VAT</small></div><span class="up">${p.stock === "low" ? "Few left" : "In stock"}</span>`}</div></div></a>`;
 
   const audSwitch = (cls = "") => `<div class="aud ${cls} ${isBiz() ? "biz" : ""}" data-aud role="radiogroup" aria-label="Shopping for"><span class="aud-pill"></span><button type="button" role="radio" aria-checked="${!isBiz()}" data-mode-set="home">${svg.home} For my home</button><button type="button" role="radio" aria-checked="${isBiz()}" data-mode-set="business">${svg.box} For my business</button></div>`;
 
@@ -373,7 +374,7 @@
           <div class="hs-intro">
             <span class="eyebrow">Categories</span>
             <h2 class="h2">${biz ? 'Build your <span class="serif">range</span>' : 'Shop every <span class="serif">room</span>'}</h2>
-            <p class="lead">${biz ? "Eight core household categories, every line from a supplier we've vetted for quality and dependable restocks." : "Eight categories of everyday essentials, chosen for quality and priced fairly."}</p>
+            <p class="lead">${biz ? `${CATEGORIES.length} household categories, every line from a supplier we've vetted for quality and dependable restocks.` : `${CATEGORIES.length} categories of everyday essentials, chosen for quality and priced fairly.`}</p>
             <div class="hs-hint">${svg.arrow} Keep scrolling</div>
           </div>
           ${CATEGORIES.map((c, i) => { const ph = PRODUCTS.find((p) => p.cat === c.id && p.image); return `
@@ -415,7 +416,7 @@
       <div class="container">
         <div class="reveal" style="max-width:740px"><span class="eyebrow" style="color:var(--pink-400)">Why MPM Digital</span><h2 class="h2" style="margin-top:12px">Supplier prices, <span class="serif">without the warehouse.</span></h2><p class="lead" style="margin-top:16px">We manage the supplier relationships, quality checks and logistics. You get better prices and dependable stock.</p></div>
         <div class="stats">
-          <div class="stat reveal"><strong data-count="500">0</strong><span>Household products across 8 categories</span></div>
+          <div class="stat reveal"><strong data-count="${PRODUCTS.length}" data-suffix="">0</strong><span>Household products across ${CATEGORIES.length} categories</span></div>
           <div class="stat reveal" style="--d:.06s"><strong data-count="48" data-suffix="h">0</strong><span>Dispatch from order confirmation</span></div>
           <div class="stat reveal" style="--d:.12s"><strong data-count="${PR.maxOff()}" data-suffix="%">0</strong><span>Maximum volume discount for businesses</span></div>
           <div class="stat reveal" style="--d:.18s"><strong data-count="9">0</strong><span>Provinces delivered to, door to door</span></div>
@@ -448,16 +449,6 @@
       </div>
     </section>
 
-    <section class="section" style="padding-top:24px">
-      <div class="container">
-        <div class="section-head reveal"><div><span class="eyebrow">Reviews</span><h2>Loved at home <span class="serif">and</span> on the shelf</h2></div></div>
-        <div class="quotes">
-          <figure class="quote reveal"><div class="stars">★★★★★</div><blockquote>“Lovely quality towels and candles for less than the mall. Delivery was quick, too.”</blockquote><footer><span class="avatar">LS</span><div><strong>Lerato S.</strong><small>Home shopper</small></div></footer></figure>
-          <figure class="quote reveal" style="--d:.08s"><div class="stars">★★★★★</div><blockquote>“The volume tiers make restocking simple. I always know my margin before I order.”</blockquote><footer><span class="avatar">NM</span><div><strong>Nomsa M.</strong><small>Homeware store owner</small></div></footer></figure>
-          <figure class="quote reveal" style="--d:.16s"><div class="stars">★★★★★</div><blockquote>“The bulk order sheet saves me an hour every week, and every delivery has been on time.”</blockquote><footer><span class="avatar">TK</span><div><strong>Thabo K.</strong><small>Cleaning services</small></div></footer></figure>
-        </div>
-      </div>
-    </section>
 
     <section class="section" id="faq" style="padding-top:72px">
       <div class="container faq-wrap">
@@ -563,7 +554,7 @@
       <div class="pdp-info">
         <div class="tags"><span class="tag">${esc(c.name)}</span>${p.badge ? `<span class="tag pink">${esc(p.badge)}</span>` : ""}<span class="tag stock-tag ${p.stock}">${p.stock === "out" ? "Sold out" : p.stock === "low" ? "Low stock" : "In stock"}</span></div>
         <h1>${esc(p.name)}</h1>
-        <div class="pdp-sku"><span>SKU ${esc(p.sku)}</span><span>${esc(p.supplier)}</span>${isBiz() ? `<span>Case of ${p.pack}</span>` : `<span>★ 4.${7 + (p.id.length % 3)} rating</span>`}</div>
+        <div class="pdp-sku"><span>Item code ${esc(p.sku)}</span>${isBiz() ? `<span>Case of ${p.pack}</span>` : `<span>${esc(c.name)}</span>`}</div>
         <p class="pdp-desc">${esc(p.desc)}</p>
         ${buyBox}
         <div class="assure"><div>${svg.truck}48h dispatch</div><div>${svg.shield}${isBiz() ? "7-day damage cover" : "14-day returns"}</div><div>${svg.tag}${isBiz() ? "Tax invoice included" : "Secure checkout"}</div></div>
@@ -758,7 +749,8 @@
   function mountHome() {
     const grid = $("#homeGrid");
     const fill = (cat) => {
-      const list = (cat === "all" ? PRODUCTS.filter((p) => p.badge) : PRODUCTS.filter((p) => p.cat === cat)).slice(0, 8);
+      const featured = PRODUCTS.filter((p) => p.badge);
+      const list = (cat === "all" ? (featured.length >= 4 ? featured : PRODUCTS) : PRODUCTS.filter((p) => p.cat === cat)).slice(0, 8);
       grid.innerHTML = list.map(card).join(""); observe();
     };
     fill("all");
@@ -771,7 +763,8 @@
     const calc = $("#calc");
     if (!canTrade()) { calc.innerHTML = tradeLockInner(); calc.classList.add("lock"); }
     else {
-    const sample = PRODUCTS.filter((p) => p.badge === "Best seller");
+    const best = PRODUCTS.filter((p) => p.badge === "Best seller");
+    const sample = (best.length ? best : PRODUCTS).slice(0, 8);
     let pid = sample[0].id, cases = isBiz() ? 12 : 1;
     const draw = () => {
       const p = byId(pid), t = tierFor(cases), u = unitPrice(p, cases);
@@ -951,6 +944,7 @@
     }
 
     function draw() {
+      if (!document.body.contains(form)) return;          // customer already left the checkout
       const t = server || localTotals();
       const freeLeft = t.hasCase ? Math.max(0, t.freeAt - t.goods) : Math.max(0, t.freeAt - t.goods * (1 + VAT_RATE));
       const collect = ship() === "collect";
