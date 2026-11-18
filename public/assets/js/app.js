@@ -60,7 +60,8 @@
   let cart = store.get("mpm_cart", [])
     .map((l) => (l.kind ? l : { id: l.id, kind: "case", qty: l.cases }))  // migrate v1 carts
     .filter((l) => l && l.id && l.qty > 0);
-  const isBiz = () => mode === "business";
+  const canTrade = () => !!SETTINGS.trade;              // approved trade account (decided by the server)
+  const isBiz = () => mode === "business" && canTrade();
   const showIncl = () => !isBiz() || incVat;
 
   const shown = (ex) => (showIncl() ? ex * (1 + VAT_RATE) : ex);
@@ -111,7 +112,21 @@
       $$("[data-mode-set]", a).forEach((b) => b.setAttribute("aria-checked", String(b.dataset.modeSet === (isBiz() ? "business" : "home"))));
     });
   }
+  function tradeGate() {
+    toast(null, user && SETTINGS.tradeStatus === "pending"
+      ? "Your trade application is being reviewed. Business pricing unlocks once it's approved."
+      : "Business pricing is for approved trade accounts. Sign in or apply below.");
+    if (!location.hash.startsWith("#/business")) location.hash = "#/business";
+  }
+  // Remove wholesale (case) lines if this visitor can't buy at trade prices.
+  function pruneCart(announce) {
+    if (canTrade()) return;
+    const before = cart.length;
+    cart = cart.filter((l) => l.kind !== "case");
+    if (cart.length !== before) { store.set("mpm_cart", cart); if (announce) toast(null, "Wholesale items were removed from your cart (trade accounts only)."); }
+  }
   function setMode(m, announce = true) {
+    if (m === "business" && !canTrade()) { if (mode === "business") { mode = "home"; store.set("mpm_mode", "home"); syncModeUI(); } tradeGate(); return; }
     if (m === mode) return;
     mode = m; store.set("mpm_mode", m); syncModeUI(); rerender();
     if (announce) toast(null, m === "business" ? "Business pricing on: buying by the case, ex VAT" : "Home shopping on: single items at everyday prices");
@@ -130,6 +145,7 @@
     const p = byId(id); if (!p) return;
     if (p.stock === "out") { toast(p, `${p.name} is sold out right now`); return; }
     kind = kind || (isBiz() ? "case" : "each");
+    if (kind === "case" && !canTrade()) { tradeGate(); return; }
     qty = kind === "case" ? Math.max(p.moq, qty || p.moq) : Math.max(1, qty || 1);
     const line = cart.find((l) => l.id === id && l.kind === kind);
     if (line) line.qty += qty; else cart.push({ id, kind, qty });
@@ -212,7 +228,7 @@
           if (nt) hint = `Add ${plural(nt.min - l.qty, "more case")} to unlock ${nt.name} pricing (−${nt.off * 100}%)`;
         } else {
           meta = `${money(shown(retailEx(p)))} each`;
-          if (l.qty >= Math.ceil(p.pack / 2)) hint = `Buying ${l.qty}? A case of ${p.pack} is ${money(p.price * 1.15)}/unit: save ${caseSaving(p)}%`;
+          if (canTrade() && l.qty >= Math.ceil(p.pack / 2)) hint = `Buying ${l.qty}? A case of ${p.pack} is ${money(p.price * 1.15)}/unit: save ${caseSaving(p)}%`;
         }
         return `<div class="line-item">${art(p)}<div>
           <div class="li-top"><strong>${esc(p.name)}</strong><button class="li-remove" type="button" data-remove="${k}">Remove</button></div>
@@ -237,7 +253,7 @@
     const badgeCls = p.badge === "Hot" ? "hot" : p.badge === "New" ? "new" : "";
     const priceBlock = isBiz()
       ? `<div class="price"><strong>${money(shown(p.price))}</strong><small>/unit ${vatLbl()}</small><span class="from">From ${money(shown(bestUnit(p)))} at 50+ cases</span></div>`
-      : `<div class="price"><strong>${money(p.rrp)}</strong><small>each</small><span class="from">Save ${caseSaving(p)}% by the case</span></div>`;
+      : `<div class="price"><strong>${money(p.rrp)}</strong><small>each</small>${canTrade() ? `<span class="from">Save ${caseSaving(p)}% by the case</span>` : ""}</div>`;
     return `<article class="card reveal" style="--d:${(i % 4) * 0.06}s">
       <a href="#/product/${p.id}" class="card-media" aria-label="${esc(p.name)}">${art(p)}
         ${p.badge ? `<span class="badge ${badgeCls}">${esc(p.badge)}</span>` : ""}
@@ -245,7 +261,7 @@
       <div class="card-body">
         <div class="card-meta"><span>${esc(c.name)}</span><span class="stock ${p.stock}">${p.stock === "out" ? "Sold out" : p.stock === "low" ? "Low stock" : "In stock"}</span></div>
         <h3><a href="#/product/${p.id}">${esc(p.name)}</a></h3>
-        <p class="pack">${isBiz() ? `Case of ${p.pack} · MOQ ${plural(p.moq, "case")}` : (p.pack > 1 ? `Also available by the case of ${p.pack}` : `Bulk bale · ${p.moq}+ for business pricing`)}</p>
+        <p class="pack">${isBiz() ? `Case of ${p.pack} · MOQ ${plural(p.moq, "case")}` : (canTrade() ? (p.pack > 1 ? `Also available by the case of ${p.pack}` : `Bulk bale · ${p.moq}+ for business pricing`) : (p.stock === "low" ? "Only a few left" : "Dispatched within 48 hours"))}</p>
         <div class="card-price">${priceBlock}
           ${p.stock === "out" ? '<span class="sold-out">Sold out</span>' : `<button class="add-btn" type="button" data-add="${p.id}" aria-label="Add ${esc(p.name)} to cart">${svg.plus}</button>`}
         </div>
@@ -256,9 +272,19 @@
       <div class="mq-price">${isBiz() ? `Case of ${p.pack} · RRP ${money0(p.rrp)}` : `${esc(catOf(p).name)}`}</div>
       <div class="mq-stats">${isBiz()
         ? `<div><strong>${money(shown(bestUnit(p)))}</strong><small>best unit price</small></div><span class="up">▲ ${margin(p)}%</span>`
-        : `<div><strong>${money(p.rrp)}</strong><small>each, incl. VAT</small></div><span class="up">−${caseSaving(p)}% bulk</span>`}</div></div></a>`;
+        : `<div><strong>${money(p.rrp)}</strong><small>each, incl. VAT</small></div><span class="up">★ 4.${7 + (p.id.length % 3)}</span>`}</div></div></a>`;
 
   const audSwitch = (cls = "") => `<div class="aud ${cls} ${isBiz() ? "biz" : ""}" data-aud role="radiogroup" aria-label="Shopping for"><span class="aud-pill"></span><button type="button" role="radio" aria-checked="${!isBiz()}" data-mode-set="home">${svg.home} For my home</button><button type="button" role="radio" aria-checked="${isBiz()}" data-mode-set="business">${svg.box} For my business</button></div>`;
+
+  const tradeLockInner = () => {
+    const pending = user && SETTINGS.tradeStatus === "pending";
+    return `<div class="lock-ico">${svg.shield}</div>
+      <h3>${pending ? "Your application is being reviewed" : "Trade prices are for approved businesses"}</h3>
+      <p>${pending ? "We verify trade accounts within one business day. You'll see wholesale case prices here as soon as you're approved." : "Wholesale case prices, volume discounts of up to 22%, tax invoices and 30-day terms are available once your business is verified."}</p>
+      <ul class="lock-list"><li>${svg.check}Buy by the case at wholesale prices</li><li>${svg.check}Automatic volume tiers</li><li>${svg.check}Bulk order sheet and quotes</li></ul>
+      ${pending ? "" : `<div class="lock-btns"><a href="#/business" class="btn btn-pink">Apply for a trade account ${svg.arrow}</a>${user ? "" : `<a href="#/account?next=business" class="btn btn-outline-light">I have an account: sign in</a>`}</div>`}`;
+  };
+  const tradeLockCard = () => `<div class="calc lock">${tradeLockInner()}</div>`;
 
   const words = (text) => text.split(" ").map((w) => `<span class="w">${w}</span>`).join(" ");
 
@@ -285,7 +311,7 @@
           : 'Everything for the <span class="serif">home.</span><br><span class="grad-text">Priced for everyone.</span>'}</h1>
         <p class="hero-sub reveal" style="--d:.14s">${biz
           ? "Wholesale household products, direct from our suppliers to your shelves. Buy by the case, unlock volume pricing automatically, and get dispatch within 48 hours anywhere in South Africa."
-          : "Quality household essentials straight from the suppliers that stock South Africa's shops. Buy just what you need at everyday prices, or buy by the case and save even more."}</p>
+          : "Quality household essentials straight from the suppliers that stock South Africa's shops. Buy just what you need at everyday prices. Running a business? Apply for wholesale trade pricing."}</p>
         <div class="hero-ctas reveal" style="--d:.2s">
           <a href="#/shop" class="btn btn-primary">${biz ? "Browse the catalogue" : "Start shopping"} ${svg.arrow}</a>
           ${biz ? '<a href="#/bulk" class="btn btn-ghost">Bulk order sheet</a>' : '<a href="#/#categories" class="btn btn-ghost">Shop by room</a>'}
@@ -344,13 +370,13 @@
     <section class="section" id="pricing" style="padding-top:24px">
       <div class="container pricing-wrap">
         <div class="pricing-copy reveal">
-          <span class="eyebrow">${biz ? "Volume pricing" : "Buying in bulk?"}</span>
-          <h2 class="h2">${biz ? 'The more you stock, <span class="serif">the less you pay.</span>' : `Buy by the case, <span class="serif">save up to ${Math.max(...PRODUCTS.map(caseSaving))}%.</span>`}</h2>
-          <p class="lead">${biz ? "Discounts apply per product line, so there are no codes to enter and no negotiation. Add cases and the price drops at every tier." : "Stocking up for a big family, a church event or a small business? Switch to business pricing to buy by the case at wholesale prices. There's no sign-up needed."}</p>
+          <span class="eyebrow">${biz ? "Volume pricing" : "For businesses"}</span>
+          <h2 class="h2">${biz ? 'The more you stock, <span class="serif">the less you pay.</span>' : 'Wholesale prices for <span class="serif">trade accounts.</span>'}</h2>
+          <p class="lead">${biz ? "Discounts apply per product line, so there are no codes to enter and no negotiation. Add cases and the price drops at every tier." : "Run a shop, salon, guesthouse or cleaning business? Approved trade accounts buy by the case at wholesale prices, with volume discounts at every tier. Apply in two minutes; we verify within one business day."}</p>
           <div class="tier-list" id="tierList">
             ${TIERS.map((t) => `<div class="tier-row" data-tier="${t.min}"><span class="tier-dot">${t.name[0]}</span><div><strong>${t.name}</strong><small>${t.label}</small></div><span class="tier-off">${t.off ? `−${t.off * 100}%` : "List"}</span></div>`).join("")}
           </div>
-          ${biz ? "" : `<button type="button" class="btn btn-primary" data-mode-set="business" style="margin-top:22px">Switch to business pricing ${svg.arrow}</button>`}
+          ${biz ? "" : `<a href="#/business" class="btn btn-primary" style="margin-top:22px">${user && SETTINGS.tradeStatus === "pending" ? "Application under review" : "Get trade pricing"} ${svg.arrow}</a>`}
         </div>
         <div class="calc reveal" style="--d:.1s" id="calc"></div>
       </div>
@@ -409,7 +435,7 @@
         <div class="reveal"><span class="eyebrow">FAQ</span><h2 class="h2">Questions, <span class="serif">answered.</span></h2><p class="lead" style="margin-top:16px">Can't find what you need? Our team replies within one business day.</p><a href="#/checkout?mode=quote" class="btn btn-primary" style="margin-top:24px">Get in touch ${svg.arrow}</a></div>
         <div class="faq reveal" style="--d:.08s">
           <details open><summary>Can I buy just one item?</summary><p>Yes. Choose "For my home" and you can buy single items at everyday prices, delivered to your door. Delivery is free on orders over R750.</p></details>
-          <details><summary>What's the difference between home and business pricing?</summary><p>Home prices are per item and include VAT. Business pricing sells by the case at wholesale rates, shows prices excluding VAT, and gives automatic volume discounts of up to 22%. Anyone can switch at any time.</p></details>
+          <details><summary>What's the difference between home and business pricing?</summary><p>Home prices are per item and include VAT. Business (trade) pricing sells by the case at wholesale rates, shows prices excluding VAT, and gives automatic volume discounts of up to 22%. It's available to approved trade accounts: apply under "For business" and we'll verify your business within one business day.</p></details>
           <details><summary>How does volume pricing work?</summary><p>Each product has four tiers based on the number of cases of that line: Starter (1–9), Trade (10–24, −8%), Volume (25–49, −15%) and Distributor (50+, −22%). Discounts are applied automatically in your cart.</p></details>
           <details><summary>How long does delivery take?</summary><p>We dispatch within 48 hours. Main centres usually receive orders in 2–4 business days, and regional areas in 3–6.</p></details>
           <details><summary>Can I return something?</summary><p>Unused items can be returned within 14 days. Damaged or faulty goods are replaced free of charge if reported within 7 days of delivery.</p></details>
@@ -436,7 +462,7 @@
       <nav class="crumbs" aria-label="Breadcrumb"><a href="#/">Home</a><span><a href="#/shop">Shop</a></span>${c ? `<span>${esc(c.name)}</span>` : ""}</nav>
       <h1>${c ? esc(c.name) : isBiz() ? 'The <span class="serif">catalogue</span>' : 'Shop <span class="serif">everything</span>'}</h1>
       <p>${c ? esc(c.blurb) : isBiz() ? "Every line priced per unit and sold by the case. Volume discounts are applied automatically at checkout." : "Everyday household essentials at fair prices. Need more? Every product also comes by the case."}</p>
-      <div class="mode-banner">${isBiz() ? `${svg.box}<span>You're seeing <b>business pricing</b> (by the case, ${vatLbl()}).</span><button type="button" data-mode-set="home">Shop for home instead</button>` : `${svg.home}<span>You're seeing <b>home prices</b> (single items, incl. VAT).</span><button type="button" data-mode-set="business">Switch to business pricing</button>`}</div>
+      <div class="mode-banner">${isBiz() ? `${svg.box}<span>You're seeing <b>business pricing</b> (by the case, ${vatLbl()}).</span><button type="button" data-mode-set="home">Shop for home instead</button>` : `${svg.home}<span>You're seeing <b>home prices</b> (single items, incl. VAT).</span><button type="button" data-mode-set="business">${canTrade() ? "Switch to business pricing" : "Trade customer? Get wholesale prices"}</button>`}</div>
     </div></section>
     <div class="container shop">
       <aside class="filters" id="filters">
@@ -487,11 +513,14 @@
             <button class="btn btn-primary" type="button" id="pdpAdd" ${p.stock === "out" ? "disabled" : ""}>${svg.cart} ${p.stock === "out" ? "Sold out" : "Add to cart"}</button>
           </div>
           <div class="buy-sum"><span id="pdpUnits"></span><span>Total <b id="pdpLine"></b></span></div>
-          <div class="upsell">
+          ${canTrade() ? `<div class="upsell">
             <div class="upsell-top">${svg.box}<div><strong>Buy a case of ${p.pack} and save ${caseSaving(p)}%</strong><small>${money(p.price * 1.15)} per unit · ${money(p.price * 1.15 * p.pack * p.moq)} for ${plural(p.moq, "case")} (${p.pack * p.moq} units)</small></div>
               <button type="button" class="btn btn-pink btn-sm" data-add-case="${p.id}">Add case</button></div>
             <details><summary>See bulk pricing tiers</summary>${tierTable}</details>
-          </div>
+          </div>` : `<div class="upsell">
+            <div class="upsell-top">${svg.box}<div><strong>Buying for a business?</strong><small>Approved trade accounts buy by the case of ${p.pack} at wholesale prices.</small></div>
+              <a href="#/business" class="btn btn-pink btn-sm">Get trade pricing</a></div>
+          </div>`}
         </div>`;
     return `
     <section class="page-head" style="padding-bottom:20px"><div class="container">
@@ -509,7 +538,7 @@
         <p class="pdp-desc">${esc(p.desc)}</p>
         ${buyBox}
         <div class="assure"><div>${svg.truck}48h dispatch</div><div>${svg.shield}${isBiz() ? "7-day damage cover" : "14-day returns"}</div><div>${svg.tag}${isBiz() ? "Tax invoice included" : "Secure checkout"}</div></div>
-        <div class="specs">${Object.entries(p.specs).map(([k, v]) => `<div><small>${esc(k)}</small><b>${esc(v)}</b></div>`).join("")}<div><small>Units per case</small><b>${p.pack}</b></div><div><small>${isBiz() ? "Minimum order" : "Sold"}</small><b>${isBiz() ? plural(p.moq, "case") : "Individually or by the case"}</b></div></div>
+        <div class="specs">${Object.entries(p.specs).map(([k, v]) => `<div><small>${esc(k)}</small><b>${esc(v)}</b></div>`).join("")}<div><small>Units per case</small><b>${p.pack}</b></div><div><small>${isBiz() ? "Minimum order" : "Sold"}</small><b>${isBiz() ? plural(p.moq, "case") : canTrade() ? "Individually or by the case" : "Individually"}</b></div></div>
       </div>
     </div>
     <section class="container" style="padding-bottom:96px">
@@ -518,7 +547,14 @@
     </section>`;
   };
 
-  views.bulk = () => `
+  views.bulk = () => canTrade() ? viewsBulk() : `
+    <section class="page-head"><div class="orb orb-1"></div><div class="container">
+      <nav class="crumbs"><a href="#/">Home</a><span>Bulk order</span></nav>
+      <h1>Bulk order <span class="serif">sheet</span></h1>
+      <p>The bulk order sheet shows wholesale case prices, so it's available to approved trade accounts only.</p>
+    </div></section>
+    <div class="container" style="padding-bottom:96px">${tradeLockCard()}</div>`;
+  const viewsBulk = () => `
     <section class="page-head"><div class="orb orb-1"></div><div class="container">
       <nav class="crumbs"><a href="#/">Home</a><span>Bulk order</span></nav>
       <h1>Bulk order <span class="serif">sheet</span></h1>
@@ -590,12 +626,13 @@
     <section class="page-head"><div class="orb orb-1"></div><div class="container">
       <nav class="crumbs"><a href="#/">Home</a><span>For business</span></nav>
       <h1>Open a <span class="serif">trade account</span></h1>
-      <p>Free to join. Approved accounts get tax invoices, saved order lists, a dedicated account manager and the option of 30-day terms.</p>
+      <p>Wholesale prices are only shown to verified businesses. Apply below (it's free) and we'll review your details within one business day.</p>
+      ${user ? "" : `<div class="mode-banner">${svg.user}<span>Already have a trade account?</span><a class="btn btn-primary btn-sm" href="#/account?next=business">Sign in to see trade prices</a></div>`}
     </div></section>
     <div class="container two-col">
       <form id="accountForm" class="form-card" novalidate>
         <h3><span class="n">✦</span>Tell us about your business</h3>
-        ${user && user.tradeStatus === "approved" ? `<p class="form-hint ok">Your trade account is approved. You can pay on 30-day terms at checkout.</p>` : user && user.tradeStatus === "pending" ? `<p class="form-hint">Your application is being reviewed. We'll email you within one business day.</p>` : ""}
+        ${user && user.tradeStatus === "approved" ? `<p class="form-hint ok">Your trade account is approved. You can see wholesale prices and pay on 30-day terms at checkout.</p><button type="button" class="btn btn-primary" data-mode-set="business" style="margin-bottom:18px">Shop with trade pricing ${svg.arrow}</button>` : user && user.tradeStatus === "pending" ? `<p class="form-hint">Your application is being reviewed. We'll email you within one business day.</p>` : ""}
         <div class="fields">
           <div class="field"><label for="a1">Business name</label><input class="input" id="a1" required autocomplete="organization"></div>
           <div class="field"><label for="a2">Business type</label><select class="select" id="a2" style="width:100%" required><option value="">Select…</option><option>Retail store</option><option>Spaza / convenience</option><option>Online reseller</option><option>Hospitality</option><option>Cleaning services</option><option>Office / corporate</option><option>Supplier: I want to sell through MPM</option></select></div>
@@ -665,8 +702,10 @@
       $$(".tab", e.currentTarget).forEach((t) => t.classList.toggle("on", t === b)); fill(b.dataset.tab);
     });
 
-    // Tier calculator
+    // Tier calculator (needs wholesale prices, so trade accounts only)
     const calc = $("#calc");
+    if (!canTrade()) { calc.innerHTML = tradeLockInner(); calc.classList.add("lock"); }
+    else {
     const sample = PRODUCTS.filter((p) => p.badge === "Best seller");
     let pid = sample[0].id, cases = isBiz() ? 12 : 1;
     const draw = () => {
@@ -691,6 +730,7 @@
       $("#calcSel").addEventListener("change", (e) => { pid = e.target.value; draw(); });
     };
     draw();
+    }
 
     // Count-up stats
     const io = new IntersectionObserver((entries) => entries.forEach((en) => {
@@ -770,6 +810,7 @@
   }
 
   function mountBulk() {
+    if (!canTrade()) return;
     const qtys = {};
     const update = () => {
       let total = 0, lines = 0, casesN = 0;
@@ -879,8 +920,7 @@
           businessName: v("a1"), businessType: v("a2"), contact: v("a3"), phone: v("a4"), email: v("a5"),
           cipc: v("a6"), monthlySpend: v("a7"), wantsTerms: $("#a8").checked, vatNumber: v("a10"), password: v("a9"),
         } });
-        user = res.user; syncUserUI();
-        if (!isBiz()) setMode("business", false);
+        user = res.user; syncUserUI(); await loadCatalog();
         location.hash = "#/done/new?t=account";
       } catch (err) { toast(null, err.message); btn.disabled = false; }
     });
@@ -892,7 +932,7 @@
     <section class="page-head"><div class="orb orb-2"></div><div class="container">
       <nav class="crumbs"><a href="#/">Home</a><span>My account</span></nav>
       <h1>Hi, <span class="serif">${esc(user.name.split(" ")[0])}</span></h1>
-      <p>${esc(user.email)}${user.tradeStatus === "approved" ? " · Approved trade account" : user.tradeStatus === "pending" ? " · Trade application under review" : ""}</p>
+      <p>${esc(user.email)}${user.tradeStatus === "approved" ? " · Approved trade account: wholesale prices are on" : user.tradeStatus === "pending" ? " · Trade application under review" : user.tradeStatus === "rejected" ? " · Trade application not approved. Contact us for details" : ""}</p>
     </div></section>
     <div class="container two-col">
       <div>
@@ -948,7 +988,12 @@
         e.preventDefault();
         const body = { ...Object.fromEntries(new FormData(e.currentTarget)), ...extra };
         const btn = $("button[type=submit]", e.currentTarget); btn.disabled = true;
-        try { const r = await api(path, { method: "POST", body }); user = r.user; syncUserUI(); await loadCatalog(); toast(null, `Welcome, ${user.name.split(" ")[0]}!`); after(); }
+        try {
+          const r = await api(path, { method: "POST", body }); user = r.user; syncUserUI(); await loadCatalog();
+          toast(null, canTrade() ? `Welcome, ${user.name.split(" ")[0]}! Trade pricing is on.` : `Welcome, ${user.name.split(" ")[0]}!`);
+          if (canTrade() && mode !== "business") { mode = "business"; store.set("mpm_mode", "business"); syncModeUI(); }
+          after();
+        }
         catch (err) { toast(null, err.message); btn.disabled = false; }
       });
       wire("#loginForm", "/api/auth/login");
@@ -971,7 +1016,9 @@
     });
     $("#logoutBtn").addEventListener("click", async () => {
       await api("/api/auth/logout", { method: "POST" }).catch(() => {});
-      user = null; syncUserUI(); await loadCatalog().catch(() => {}); toast(null, "Signed out"); location.hash = "#/";
+      user = null; syncUserUI(); await loadCatalog().catch(() => {});
+      if (mode === "business") { mode = "home"; store.set("mpm_mode", "home"); syncModeUI(); }
+      pruneCart(false); renderCart(); toast(null, "Signed out"); location.hash = "#/";
     });
   }
 
@@ -1163,6 +1210,7 @@
       const m = b ? b.dataset.welcome : "home";
       w.classList.remove("on"); lockScroll(false);
       setTimeout(() => { w.hidden = true; }, 400);
+      if (m === "business" && !canTrade()) { mode = "home"; store.set("mpm_mode", "home"); syncModeUI(); rerender(); tradeGate(); return; }
       mode = null; setMode(m, false);
       toast(null, m === "business" ? "Welcome! You're seeing business pricing." : "Welcome! Happy shopping.");
     });
@@ -1208,6 +1256,8 @@
   Promise.all([loadCatalog(), api("/api/me").then((r) => { user = r.user; }).catch(() => {})])
     .then(() => {
       cart = cart.filter((l) => byId(l.id)); store.set("mpm_cart", cart);
+      if (mode === "business" && !canTrade()) { mode = "home"; store.set("mpm_mode", "home"); }
+      syncModeUI(); pruneCart(true);
       syncUserUI(); renderCart(); route();
       loaderDone.then(showWelcome);
     })

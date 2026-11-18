@@ -90,19 +90,26 @@ const rowToProduct = (r) => ({
   stockUnits: r.stock_units, stock: r.stock_units <= 0 ? "out" : r.stock_units <= r.pack * 10 ? "low" : "in",
   active: !!r.active, sort: r.sort,
 });
+// Wholesale (case) pricing is only for approved trade accounts and admins.
+const isTrade = (u) => !!u && (u.role === "admin" || u.trade_status === "approved");
+
 const getProduct = async (id) => { const r = await db.get("SELECT * FROM products WHERE id = ?", id); return r ? rowToProduct(r) : null; };
 
 async function catalog(user) {
+  const trade = isTrade(user);
   const categories = await db.all("SELECT * FROM categories ORDER BY sort, name");
   const products = (await db.all("SELECT * FROM products WHERE active = 1 ORDER BY sort, name")).map(rowToProduct)
-    .map(({ stockUnits, active, ...p }) => p);   // don't expose exact stock counts publicly
+    // never expose exact stock; only approved trade accounts receive wholesale prices
+    .map(({ stockUnits, active, price, ...p }) => (trade ? { ...p, price } : p));
   return {
-    categories, products, tiers: P.TIERS,
+    categories, products, tiers: trade ? P.TIERS : [],
     settings: {
       vatRate: P.VAT_RATE, bizFreeDelivery: P.BIZ_FREE_DELIVERY, bizDeliveryFee: P.BIZ_DELIVERY_FEE,
       homeFreeDelivery: P.HOME_FREE_DELIVERY, homeDeliveryFee: P.HOME_DELIVERY_FEE,
       paymentMethods: payments.available(user),
       preview: store.readOnly(),
+      trade,                                   // can this visitor see/buy at wholesale?
+      tradeStatus: user ? user.trade_status : "none",
     },
   };
 }
@@ -150,6 +157,8 @@ async function createOrder(body, user) {
 
   if (type === "contact" && !message) throw bad("Please tell us how we can help.");
   if (type === "order" && !lines.length) throw bad("Your cart is empty.");
+  if (lines.some((l) => l.kind === "case") && !isTrade(user))
+    throw new HttpError(403, "Wholesale (by the case) pricing is only available to approved trade accounts. Please sign in with your trade account, or remove the cases from your cart.");
 
   // Validate against the live catalogue: the server is the source of truth for prices and stock.
   const items = [];

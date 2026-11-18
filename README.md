@@ -34,6 +34,7 @@ Until the database is connected, the site runs in **preview mode**: products sho
 ## What works
 **Shop**
 - Two ways to shop: **Home** (single items at retail prices incl. VAT) and **Business** (by the case, with volume tiers of up to 22% off, an ex/incl VAT toggle, a bulk order sheet and quote requests).
+- **Wholesale prices are private.** Only approved trade accounts (and admins) receive wholesale prices from the server; everyone else only ever gets retail prices. Business mode, the bulk order sheet, case upsells and the savings calculator are locked behind sign-in/approval, and the server refuses case orders from anyone else. Approve trade accounts in **Admin → Trade accounts**.
 - Live catalogue, prices and stock come from the database. Sold-out items can't be bought.
 - **Checkout creates real orders.** The server recalculates every price and checks stock and minimum order quantities. Stock is reserved when an order is placed.
 - EFT payment shows your banking details with the order reference. Approved trade customers can also pay on a **30-day account**.

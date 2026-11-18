@@ -1041,3 +1041,15 @@ input[readonly] { background: var(--lilac-50); color: var(--muted); }
   .logo { font-size: 17px; gap: 8px; }
   .logo-mark { width: 30px; height: 30px; }
 }
+
+/* ---------- trade-only lock card ---------- */
+.calc.lock { display: grid; gap: 14px; align-content: center; }
+.lock-ico { width: 52px; height: 52px; border-radius: 16px; display: grid; place-items: center; background: rgba(230,66,127,.2); color: var(--pink-400); }
+.lock-ico svg { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.calc.lock h3 { font-size: 24px; font-weight: 800; letter-spacing: -0.02em; }
+.calc.lock > p { color: rgba(255,255,255,.72); }
+.lock-list { list-style: none; padding: 0; margin: 4px 0; display: grid; gap: 8px; }
+.lock-list li { display: flex; gap: 10px; align-items: center; font-size: 15px; color: rgba(255,255,255,.85); }
+.lock-list svg { width: 18px; height: 18px; flex: none; fill: none; stroke: var(--pink-400); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.lock-btns { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 6px; }
+.mode-banner .btn { --bh: 36px; }
