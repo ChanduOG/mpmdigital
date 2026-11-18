@@ -174,7 +174,7 @@
     const specRow = (k = "", v = "") => `<div class="row"><input class="input" placeholder="Label (e.g. Material)" value="${esc(k)}"><input class="input" placeholder="Value" value="${esc(v)}"><button type="button" class="x" aria-label="Remove">×</button></div>`;
     openDrawer(`<div class="d-head"><div><h2>${isNew ? "New product" : esc(p.name)}</h2><small>${isNew ? "Fill in the details below." : esc(p.sku)}</small></div><button class="d-close" data-close aria-label="Close">×</button></div>
       <form class="d-body" id="pForm" novalidate>
-        ${isNew ? "" : `<div class="d-sec"><h3>Photo</h3><div class="img-edit"><img id="pImg" src="${esc(p.image || "")}" alt=""><div><label class="btn btn-ghost btn-sm">Change photo<input type="file" id="pFile" accept="image/jpeg,image/png,image/webp"></label><p class="form-hint">Square photos look best (at least 900×900). JPG, PNG or WebP under 4 MB.</p></div></div></div>`}
+        ${isNew ? "" : `<div class="d-sec"><h3>Photo</h3><div class="img-edit"><img id="pImg" src="${esc(p.image || "")}" alt=""><div><label class="btn btn-ghost btn-sm">Change photo<input type="file" id="pFile" accept="image/jpeg,image/png,image/webp"></label><p class="form-hint">Square photos look best. JPG, PNG or WebP; large photos are resized automatically.</p></div></div></div>`}
         <div class="d-sec"><h3>Details</h3><div class="fields">
           <div class="field full"><label>Name</label><input class="input" name="name" value="${esc(p.name)}" required></div>
           <div class="field"><label>SKU</label><input class="input" name="sku" value="${esc(p.sku)}" required></div>
@@ -212,13 +212,20 @@
     const file = $("#pFile");
     if (file) file.addEventListener("change", () => {
       const fl = file.files[0]; if (!fl) return;
-      if (fl.size > 4 * 1024 * 1024) { toast("Images must be under 4 MB"); return; }
-      const rd = new FileReader();
-      rd.onload = async () => {
-        try { const r = await api(`/api/admin/products/${encodeURIComponent(p.id)}/image`, { method: "POST", body: { dataUrl: rd.result } }); $("#pImg").src = r.product.image; toast("Photo updated"); products(); }
+      if (fl.size > 25 * 1024 * 1024) { toast("That file is too large"); return; }
+      const img = new Image(), src = URL.createObjectURL(fl);
+      img.onload = async () => {
+        // resize to max 1200px and re-encode as JPEG so uploads stay small
+        const scale = Math.min(1, 1200 / Math.max(img.width, img.height));
+        const c = document.createElement("canvas"); c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale);
+        const g = c.getContext("2d"); g.fillStyle = "#fff"; g.fillRect(0, 0, c.width, c.height); g.drawImage(img, 0, 0, c.width, c.height);
+        URL.revokeObjectURL(src);
+        toast("Uploading photo…");
+        try { const r = await api(`/api/admin/products/${encodeURIComponent(p.id)}/image`, { method: "POST", body: { dataUrl: c.toDataURL("image/jpeg", 0.85) } }); $("#pImg").src = r.product.image; toast("Photo updated"); products(); }
         catch (err) { toast(err.message); }
       };
-      rd.readAsDataURL(fl);
+      img.onerror = () => { URL.revokeObjectURL(src); toast("That file isn't an image we can read"); };
+      img.src = src;
     });
   }
 

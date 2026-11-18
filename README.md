@@ -1,12 +1,13 @@
 # MPM Digital — household products store
 
 A working online store for **everyday shoppers and wholesale buyers**, in pink, burgundy and light purple.
-It runs on Node.js with a built-in SQLite database, with **no other dependencies to install**.
+It runs on Node.js with a SQLite-compatible database (a local file in development, [Turso](https://turso.tech) when hosted on Vercel).
 
 ## Run it
 Requires Node.js 22.9 or newer.
 
 ```bash
+npm install
 cp .env.example .env      # then edit .env (admin email/password, bank details)
 npm start
 ```
@@ -15,6 +16,20 @@ npm start
 
 On first start the database (`data/mpm.db`) is created and filled with the starter catalogue and photos.
 To start over, stop the server, delete the `data/` folder, and start it again.
+
+## Hosting on Vercel
+Vercel serves `public/` as the website and runs the API from `api/index.js` as a serverless function (`vercel.json` wires this up).
+Vercel's disk is temporary, so the store needs two free add-ons. Set both up once in the Vercel dashboard:
+
+1. **Database (Turso):** Project → **Storage** (or **Integrations → Marketplace**) → add **Turso**, create a database and connect it to this project.
+   This adds `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN`. (Or create a database at turso.tech and add those two variables yourself.)
+2. **Photo uploads (Blob):** Project → **Storage** → **Create** → **Blob** → connect to this project. This adds `BLOB_READ_WRITE_TOKEN`.
+3. **Environment variables:** Project → **Settings → Environment Variables**: add `ADMIN_EMAIL`, `ADMIN_PASSWORD` (10+ chars),
+   `STORE_EMAIL`, `BANK_NAME`, `BANK_ACCOUNT_NAME`, `BANK_ACCOUNT_NUMBER`, `BANK_BRANCH_CODE`.
+4. **Redeploy** (Deployments → ⋯ → Redeploy). On first request the tables are created, the starter catalogue is loaded and your admin account is made.
+
+Check it at `https://<your-site>/api/health`: it should say `"database":"connected"`.
+Until the database is connected, the site runs in **preview mode**: products show, but checkout and sign-in politely say ordering isn't open yet.
 
 ## What works
 **Shop**
@@ -45,9 +60,12 @@ Emails (order confirmations, new-order alerts) are stubbed in **`server/notify.j
 
 ## Project layout
 ```
+api/
+  index.js       Vercel serverless entry (wraps server/app.js)
 server/
-  server.js      web server + API + admin endpoints
-  db.js          SQLite schema and first-run seed
+  app.js         API + admin endpoints (shared by local server and Vercel)
+  server.js      local web server (npm start)
+  db.js          database (local file or Turso), schema and first-run seed
   auth.js        passwords, sessions, admin bootstrap
   payments.js    payment methods (plug gateways in here)
   notify.js      notifications (plug email in here)
@@ -67,11 +85,11 @@ so the shop and checkout always agree. Product prices are edited in the admin da
 - **Retail price (RRP):** per unit, incl. VAT (what home shoppers pay)
 
 ## Going live checklist
-- [ ] Host on a Node server with a **persistent disk** for `data/` (e.g. a VPS, Render or Railway with a volume, Fly.io).
-- [ ] Put it behind HTTPS and set `COOKIE_SECURE=1`.
+- [ ] On Vercel: connect Turso + Blob and set the environment variables (see above). Elsewhere: any Node host with a persistent disk for `data/`.
+- [ ] HTTPS: automatic on Vercel. On other hosts, put it behind HTTPS and set `COOKIE_SECURE=1`.
 - [ ] Set a strong `ADMIN_PASSWORD`, real bank details and `STORE_EMAIL` in `.env`.
 - [ ] Replace the starter photos (Unsplash stand-ins, see `public/assets/img/products/CREDITS.md`) and the sample products with your suppliers' real lines.
 - [ ] Replace the sample reviews and headline stats on the home page.
 - [ ] Connect a payment gateway and email (see above).
 - [ ] Add your terms, privacy policy (POPIA) and returns policy pages.
-- [ ] Back up `data/mpm.db` regularly.
+- [ ] Back up the database (Turso has point-in-time backups; locally, copy `data/mpm.db`).

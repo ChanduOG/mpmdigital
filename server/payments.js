@@ -65,8 +65,8 @@ function available(user) {
     .map(([id, m]) => ({ id, label: m.label, note: m.note }));
 }
 
-function markPaid(ref, paymentRef = "") {
-  db.prepare(`UPDATE orders SET payment_status='paid', payment_ref=?, status=CASE WHEN status='pending_payment' THEN 'paid' ELSE status END, updated_at=datetime('now') WHERE ref=?`).run(paymentRef, ref);
+async function markPaid(ref, paymentRef = "") {
+  await db.run(`UPDATE orders SET payment_status='paid', payment_ref=?, status=CASE WHEN status='pending_payment' THEN 'paid' ELSE status END, updated_at=datetime('now') WHERE ref=?`, paymentRef, ref);
 }
 
 module.exports = { methods, available, markPaid };

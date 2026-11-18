@@ -23,29 +23,30 @@ function parseCookies(req) {
   const out = {};
   (req.headers.cookie || "").split(";").forEach((p) => {
     const i = p.indexOf("=");
-    if (i > 0) out[p.slice(0, i).trim()] = decodeURIComponent(p.slice(i + 1).trim());
+    if (i > 0) { try { out[p.slice(0, i).trim()] = decodeURIComponent(p.slice(i + 1).trim()); } catch { /* bad cookie */ } }
   });
   return out;
 }
 const isSecure = (req) => process.env.COOKIE_SECURE === "1" || req.headers["x-forwarded-proto"] === "https";
 
-function createSession(res, req, userId) {
+async function createSession(res, req, userId) {
   const token = crypto.randomBytes(32).toString("base64url");
   const expires = Date.now() + SESSION_DAYS * 864e5;
-  db.prepare("INSERT INTO sessions (token, user_id, expires_at) VALUES (?,?,?)").run(token, userId, expires);
+  await db.run("INSERT INTO sessions (token, user_id, expires_at) VALUES (?,?,?)", token, userId, expires);
+  await db.run("DELETE FROM sessions WHERE expires_at < ?", Date.now()); // tidy up old sessions
   res.setHeader("Set-Cookie", `${COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_DAYS * 86400}${isSecure(req) ? "; Secure" : ""}`);
 }
-function destroySession(req, res) {
+async function destroySession(req, res) {
   const t = parseCookies(req)[COOKIE];
-  if (t) db.prepare("DELETE FROM sessions WHERE token = ?").run(t);
-  res.setHeader("Set-Cookie", `${COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`);
+  if (t) await db.run("DELETE FROM sessions WHERE token = ?", t);
+  res.setHeader("Set-Cookie", `${COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${isSecure(req) ? "; Secure" : ""}`);
 }
-function currentUser(req) {
+async function currentUser(req) {
   const t = parseCookies(req)[COOKIE];
   if (!t) return null;
-  const row = db.prepare(`SELECT u.* , s.expires_at FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = ?`).get(t);
+  const row = await db.get("SELECT u.*, s.expires_at FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = ?", t);
   if (!row) return null;
-  if (row.expires_at < Date.now()) { db.prepare("DELETE FROM sessions WHERE token = ?").run(t); return null; }
+  if (row.expires_at < Date.now()) { await db.run("DELETE FROM sessions WHERE token = ?", t); return null; }
   return row;
 }
 const publicUser = (u) => u && ({
@@ -54,22 +55,19 @@ const publicUser = (u) => u && ({
 });
 
 // Make sure an admin exists, using ADMIN_EMAIL / ADMIN_PASSWORD from the environment.
-function ensureAdmin() {
+async function ensureAdmin() {
   const email = (process.env.ADMIN_EMAIL || "").trim();
   const pw = process.env.ADMIN_PASSWORD || "";
-  const has = db.prepare("SELECT COUNT(*) n FROM users WHERE role = 'admin'").get().n;
-  if (has) return;
+  const has = await db.get("SELECT COUNT(*) AS n FROM users WHERE role = 'admin'");
+  if (has.n) return;
   if (!email || pw.length < 10) {
-    console.warn("[auth] No admin account yet. Set ADMIN_EMAIL and ADMIN_PASSWORD (10+ chars) in .env and restart.");
+    console.warn("[auth] No admin account yet. Set ADMIN_EMAIL and ADMIN_PASSWORD (10+ chars) and restart/redeploy.");
     return;
   }
-  const existing = db.prepare("SELECT id FROM users WHERE email = ?").get(email);
-  if (existing) db.prepare("UPDATE users SET role='admin', password_hash=? WHERE id=?").run(hashPassword(pw), existing.id);
-  else db.prepare("INSERT INTO users (email, name, password_hash, role, account_type) VALUES (?,?,?,?,?)").run(email, "Store admin", hashPassword(pw), "admin", "business");
+  const existing = await db.get("SELECT id FROM users WHERE email = ?", email);
+  if (existing) await db.run("UPDATE users SET role='admin', password_hash=? WHERE id=?", hashPassword(pw), existing.id);
+  else await db.run("INSERT OR IGNORE INTO users (email, name, password_hash, role, account_type) VALUES (?,?,?,?,?)", email, "Store admin", hashPassword(pw), "admin", "business");
   console.log(`[auth] admin account ready for ${email}`);
 }
-
-// Clean expired sessions now and then.
-setInterval(() => db.prepare("DELETE FROM sessions WHERE expires_at < ?").run(Date.now()), 6 * 3600e3).unref();
 
 module.exports = { hashPassword, verifyPassword, createSession, destroySession, currentUser, publicUser, ensureAdmin };

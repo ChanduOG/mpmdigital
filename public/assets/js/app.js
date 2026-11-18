@@ -557,6 +557,7 @@
     </div></section>
     <div class="container two-col">
       <form id="checkoutForm" novalidate data-quote="${quote || contactOnly}">
+        ${SETTINGS.preview ? `<div class="mode-banner" style="margin:0 0 20px">${svg.clock}<span><b>Online ordering opens soon.</b> Checkout isn't switched on yet. Please check back shortly.</span></div>` : ""}
         ${biz ? `<div class="mode-switch" role="tablist"><button type="button" class="${quote ? "" : "on"}" data-cmode="order">Place order</button><button type="button" class="${quote ? "on" : ""}" data-cmode="quote">Request quote</button></div>` : ""}
         <div class="form-card"><h3><span class="n">1</span>${biz ? "Business details" : "Your details"}</h3>${user ? `<p class="form-hint">Signed in as <b>${esc(user.email)}</b>.</p>` : ""}<div class="fields">
           ${biz ? `<div class="field"><label for="f1">Business name</label><input class="input" id="f1" name="business" required autocomplete="organization"></div>
