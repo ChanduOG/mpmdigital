@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "mpm-store",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["--env-file-if-exists=.env", "server/server.js"],
+      "port": 3000
+    }
+  ]
+}

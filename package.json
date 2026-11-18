@@ -1,0 +1,12 @@
+{
+  "name": "mpm-digital",
+  "version": "1.0.0",
+  "private": true,
+  "description": "MPM Digital: household products store for home shoppers and wholesale buyers",
+  "main": "server/server.js",
+  "scripts": {
+    "start": "node --env-file-if-exists=.env server/server.js",
+    "dev": "node --watch --env-file-if-exists=.env server/server.js"
+  },
+  "engines": { "node": ">=22.9" }
+}

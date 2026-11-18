@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>MPM Admin</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='18' fill='%232C0A18'/%3E%3Cpath d='M14 48V27L32 13l18 14v21M22 48V33l10 8 10-8v15' fill='none' stroke='%23F17AA6' stroke-width='5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/styles.css">
+  <link rel="stylesheet" href="assets/css/admin.css">
+</head>
+<body class="admin">
+  <div id="login" class="a-login" hidden>
+    <form class="a-login-card" id="loginForm" novalidate>
+      <span class="logo-mark lg"><svg viewBox="0 0 64 64" aria-hidden="true"><path d="M14 48V27L32 13l18 14v21M22 48V33l10 8 10-8v15"/></svg></span>
+      <h1>MPM <span class="serif">admin</span></h1>
+      <p>Sign in with your admin account.</p>
+      <div class="field"><label for="le">Email</label><input class="input" id="le" type="email" name="email" required autocomplete="username"></div>
+      <div class="field"><label for="lp">Password</label><input class="input" id="lp" type="password" name="password" required autocomplete="current-password"></div>
+      <button class="btn btn-primary btn-block" type="submit">Sign in</button>
+      <p class="a-err" id="loginErr" role="alert"></p>
+      <a href="/" class="a-back">← Back to the shop</a>
+    </form>
+  </div>
+
+  <div id="shell" class="a-shell" hidden>
+    <aside class="a-side">
+      <a href="/" class="logo" target="_blank" rel="noopener">
+        <span class="logo-mark"><svg viewBox="0 0 64 64" aria-hidden="true"><path d="M14 48V27L32 13l18 14v21M22 48V33l10 8 10-8v15"/></svg></span>
+        <span class="logo-text">MPM<b>admin</b></span>
+      </a>
+      <nav class="a-nav" id="aNav">
+        <button data-tab="overview" class="on">Overview</button>
+        <button data-tab="orders">Orders <span class="a-badge" id="bOrders"></span></button>
+        <button data-tab="messages">Quotes &amp; messages <span class="a-badge" id="bMsgs"></span></button>
+        <button data-tab="products">Products</button>
+        <button data-tab="trade">Trade accounts <span class="a-badge" id="bTrade"></span></button>
+        <button data-tab="customers">Customers</button>
+      </nav>
+      <div class="a-me"><span id="meName"></span><button type="button" id="logout">Sign out</button></div>
+    </aside>
+    <main class="a-main" id="main"></main>
+  </div>
+
+  <div class="a-drawer-scrim" id="dScrim" hidden></div>
+  <aside class="a-drawer" id="drawer" aria-hidden="true"></aside>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script src="assets/js/icons.js" defer></script>
+  <script src="assets/js/admin.js" defer></script>
+</body>
+</html>
